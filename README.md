@@ -1,2 +1,10 @@
 # FlowVariabilityDrought
-Code to support Baldock et al., "Headwater streamflow variability is amplified by drought". 
+Code to support Baldock et al., "Headwater streamflow variability is amplified by drought". This repository is a subset of EcoDrought-Analysis (https://github.com/j-baldock/EcoDrought-Analysis), in which the code in the current repo was originally developed. This repo provides more streamlined versions of the original code, focused on the analyses used in the manuscript. Our goals are to (1) quantify how flow regimes vary within and among headwater stream networks and relative to long-term USGS reference gages located on larger rivers, (2) assess how spatial streamflow heterogeneity within networks changes with interannual variation in drought intensity, and (3) explore the suitability of reference gages for characterizung drought conditions upstream.
+
+This information is preliminary or provisional and is subject to revision. It is being provided to meet the need for timely best science. The information has not received final approval by the U.S. Geological Survey (USGS) and is provided on the condition that neither the USGS nor the U.S. Government shall be held liable for any damages resulting from the authorized or unauthorized use of the information.
+
+Project team: Jeff Baldock, Jenn Fair, Ben Letcher, Robert Al-Chokhachy, Jason Dunham , and Clint Muhlfeld.
+
+Author: Jeff Baldock, ORISE Postdoctoral Research Fellow, Northern Rocky Mountain Science Center, US Geological Survey
+
+View the book at: 
