@@ -1,0 +1,37 @@
+# Introduction
+
+This book provides a visual story of the code used to support Baldock et al., "Headwater streamflow variability is amplified by drought", part of the USGS Eco-Drought Project administered by the USGS Ecosystems Mission Area and Water Mission Area.
+
+*Project team*: Jeff Baldock, Jenn Fair, Ben Letcher, Robert Al-Chokhachy, Jason Dunham, and Clint Muhlfeld.
+
+**Significance:** Headwater streams account for a majority of river networks worldwide and have a disproportionately large influence on the functioning of aquatic ecosystems. Headwater streams also support critical habitat for many species, including cold-water fishes, many of which are declining or at risk of extinction. 
+
+**Problem:** Headwater streams are vastly underrepresented in streamflow monitoring networks, which place greater emphasis on mainstem rivers. As a result, less is known about how headwaters respond to changing water availability. Headwater streams therefore represent a blind spot in understanding flow regime variability and for assessing ecosystem vulnerability to changing climatic conditions, including increases in the frequency and severity of drought.
+
+**Questions:** 
+
+1. How do streamflow regimes vary spatially in headwater stream networks?
+2. How does this spatial variability change among years with climatic conditions indicative of drought?
+3. What is the value of reference gages for understanding drought-driven low flow conditions in headwaters?
+
+------------------------------------------------------------------------
+
+*This information is preliminary or provisional and is subject to revision. It is being provided to meet the need for timely best science. The information has not received final approval by the U.S. Geological Survey (USGS) and is provided on the condition that neither the USGS nor the U.S. Government shall be held liable for any damages resulting from the authorized or unauthorized use of the information.*
+
+------------------------------------------------------------------------
+
+<button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne">
+
+Session Information
+
+</button>
+
+:::: {#collapseOne .accordion-collapse .collapse}
+<div>
+
+```{r}
+sessionInfo()
+```
+
+</div>
+::::
