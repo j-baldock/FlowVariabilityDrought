@@ -1,0 +1,600 @@
+---
+title: "Modeled Flow"
+---
+
+```{r, include = FALSE}
+library(tidyverse)
+library(mapview)
+library(sf)
+library(ggpubr)
+library(fasstr)
+library(dygraphs)
+library(htmlwidgets)
+library(knitr)
+library(RColorBrewer)
+library(scales)
+library(GGally)
+library(DT)
+library(TSdist)
+library(ggridges)
+library(ggh4x)
+library(viridis)
+library(daymetr)
+library(scico)
+library(cetcolor)
+library(plotly)
+library(cowplot)
+library(hydroEvents)
+library(dtw)
+library(nhdplusTools)
+library(glue)
+library(hydroGOF)
+```
+
+
+**Purpose:** Quantify the suitability of existing modeling techniques (USGS StreamStats) for predicting streamflow in headwater systems.
+
+## Data
+
+Site information
+```{r}
+siteinfo <- read_csv("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Data/EcoDrought_SiteInformation.csv")
+siteinfo_sp <- st_as_sf(siteinfo, coords = c("long", "lat"), crs = 4326)
+```
+
+Little g's
+```{r}
+dat_clean <- read_csv("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/Qualitative/LittleG_data_clean.csv")
+```
+
+Big G's
+```{r}
+dat_clean_big <- read_csv("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/Qualitative/BigG_data_clean.csv")
+```
+
+Climate
+```{r}
+climdf <- read_csv("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/Qualitative/Daymet_climate.csv")
+climdf_summ <- read_csv("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/Qualitative/Daymet_climate_summary.csv")
+```
+
+Water availability
+```{r}
+wateravail <- read_csv("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/Qualitative/BigG_wateravailability_annual.csv")
+```
+
+Order sites: for colors, order sites from downstream to upstream (roughly) and by subbasin (if appropriate)
+```{r}
+wborder <- c("West Brook NWIS", "West Brook Lower", "Mitchell Brook", "Jimmy Brook", "Obear Brook Lower", "West Brook Upper", "West Brook Reservoir", "Sanderson Brook", "Avery Brook", "West Whately Brook")
+paineorder <- c("Paine Run 10", "Paine Run 08", "Paine Run 07", "Paine Run 06", "Paine Run 02", "Paine Run 01")
+stauntorder <- c("Staunton River 10", "Staunton River 09", "Staunton River 07", "Staunton River 06", "Staunton River 03", "Staunton River 02")
+flatorder <- c("BigCreekLower", "LangfordCreekLower", "LangfordCreekUpper", "Big Creek NWIS", "BigCreekUpper", "HallowattCreekLower", "NicolaCreek", "WernerCreek", "Hallowat Creek NWIS", "CoalCreekLower", "CycloneCreekLower", "CycloneCreekMiddle", "CycloneCreekUpper", "CoalCreekMiddle", "CoalCreekNorth", "CoalCreekHeadwaters", "McGeeCreekLower", "McGeeCreekTrib", "McGeeCreekUpper")
+yellorder <- c("Shields River Valley Ranch", "Deep Creek", "Crandall Creek", "Buck Creek", "Dugout Creek", "Shields River ab Dugout", "Lodgepole Creek", "EF Duck Creek be HF", "EF Duck Creek ab HF", "Henrys Fork")
+snakeorder <- c("Spread Creek Dam", "Rock Creek", "NF Spread Creek Lower", "NF Spread Creek Upper", "Grizzly Creek", "SF Spread Creek Lower", "Grouse Creek", "SF Spread Creek Upper", "Leidy Creek Mouth")
+donnerorder <- c("Fish Creek NWIS", "Donner Blitzen ab Fish NWIS", "Donner Blitzen nr Burnt Car NWIS", "Donner Blitzen ab Indian NWIS")
+```
+
+
+## Stream Stats
+
+Write out point shape files for each state to feed into Stream Stats batch processor
+```{r eval=FALSE}
+siteinfo_sp_wy <- siteinfo_sp %>% filter(region == "Snake")
+st_write(siteinfo_sp_wy, "C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/points/points_wy.shp")
+
+siteinfo_sp_mt <- siteinfo_sp %>% filter(region %in% c("Flat", "Shields"))
+st_write(siteinfo_sp_mt, "C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/points/points_mt.shp")
+
+siteinfo_sp_ma <- siteinfo_sp %>% filter(region == "Mass")
+st_write(siteinfo_sp_ma, "C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/points/points_ma.shp")
+
+siteinfo_sp_va <- siteinfo_sp %>% filter(region %in% c("Shen"))
+st_write(siteinfo_sp_va, "C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/points/points_va.shp")
+
+siteinfo_sp_or <- siteinfo_sp %>% filter(region %in% c("Oreg"))
+st_write(siteinfo_sp_or, "C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/points/points_or.shp")
+```
+
+List geodatabase layer names
+```{r}
+st_layers(dsn = "C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/StreamStats/points_mt7617/points_mt7617.gdb")
+```
+
+Read watershed boundaries
+```{r}
+sheds_montana <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/StreamStats/points_mt7617/points_mt7617.gdb", layer = "GlobalWatershed")
+sheds_massach <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/StreamStats/points_ma7625/points_ma7625.gdb", layer = "GlobalWatershed")
+sheds_oregon <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/StreamStats/points_or7626/points_or7626.gdb", layer = "GlobalWatershed")
+sheds_virginia <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/StreamStats/points_va7627/points_va7627.gdb", layer = "GlobalWatershed")
+sheds_wyoming <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/StreamStats/points_wy7628/points_wy7628.gdb", layer = "GlobalWatershed")
+
+sheds <- bind_rows(sheds_massach, sheds_montana, sheds_oregon, sheds_virginia, sheds_wyoming)
+mapview(sheds) 
+```
+
+Find sites that were delineated incorrectly
+```{r}
+options(scipen=999)
+badsites <- tibble(sheds) %>% select(Name, Shape_Area, DRNAREA, ELEV) %>% rename(site_id = Name) %>% left_join(siteinfo %>% select(site_id, site_name, area_sqmi, elev_ft)) %>% select(site_id, site_name, DRNAREA, area_sqmi) %>% mutate(percerror = (DRNAREA - area_sqmi) / area_sqmi) %>% filter(percerror >= 0.15 | percerror <= -0.15)
+badsites
+```
+
+Stream stats site information
+```{r}
+streamstats_info <- tibble(sheds) %>% select(Name, DRNAREA) %>% rename(site_id = Name) %>% left_join(siteinfo %>% select(site_id, site_name))
+# streamstats_info
+```
+
+Read flow statistics from geodatabases
+```{r}
+montana <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/StreamStats/points_mt7617/points_mt7617.gdb", layer = "FLOWSTATS")
+massach <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/StreamStats/points_ma7625/points_ma7625.gdb", layer = "FLOWSTATS")
+oregon <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/StreamStats/points_or7626/points_or7626.gdb", layer = "FLOWSTATS")
+virginia <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/StreamStats/points_va7627/points_va7627.gdb", layer = "FLOWSTATS")
+wyoming <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/StreamStats/points_wy7628/points_wy7628.gdb", layer = "FLOWSTATS")
+
+streamstats <- bind_rows(montana, massach, oregon, virginia, wyoming) %>% filter(!Name %in% c(badsites$site_id)) %>% rename(site_id = Name) %>% left_join(siteinfo %>% select(site_id, site_name)) %>% left_join(streamstats_info)
+head(streamstats)
+```
+
+
+```{r}
+char_massach <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/EcoDrought-Analysis/CompareModeledQ/StreamStats/points_ma7625/points_ma7625.gdb", layer = "CHARACTERISTICS")
+head(char_massach)
+```
+
+
+View provided flow statistics for each state. What is relevant to this paper?
+
+* Montana: annual & monthly duration (80, 50, 20), monthly mean flow, 7 day 10 year low flow
+* Massachusetts: annual duration (99, 98, 95, 90, 85, 80, 75, 70, 60, 50), 7 day 10 and 2 year low flow
+* Oregon: annual and monthly duration (95, 50, 25, 10, 5), monthly and annual 7 day 10 and 2 year low flow
+* Virginia: lots of flow flow stats including 7 day 10 and 2 year low flow
+* Wyoming: nothing relevant
+
+```{r eval=FALSE}
+print("MONTANA")
+unique(montana$StatName)
+print("MASSACHUSETTS")
+unique(massach$StatName)
+print("OREGON")
+unique(oregon$StatName)
+print("VIRGINA")
+unique(virginia$StatName)
+print("WYOMING")
+unique(wyoming$StatName)
+```
+
+Availability of flow statistics varies greatly by state. What statistics do all states have in common (minus Wyoming)? Only 7 day 10 year low flow is relevant. 
+```{r}
+Reduce(intersect, list(unique(montana$StatName), unique(massach$StatName), unique(oregon$StatName), unique(virginia$StatName)))
+```
+
+
+### West Brook exceedance
+
+For the West Brook, plot (annual) observed and StreamStats exceedance/duration curves and calculate absolute error
+```{r eval=FALSE, include=FALSE}
+vars <- unique(massach$StatName)[grep("Duration", unique(massach$StatName))][-1]
+
+# create plotting function
+myplotfun_ex <- function(sitename) {
+  obs <- dat_clean %>% filter(site_name == sitename)
+  # stream stats duration
+  preds <- streamstats %>% 
+    filter(site_name == unique(obs$site_name), StatName %in% vars) %>% 
+    mutate(percentile = parse_number(StatName)) %>% 
+    mutate(flow_cms = Value*0.02831683199881, area_sqkm = DRNAREA*2.58999)
+  preds <- add_daily_yield(data = preds %>% select(site_id, site_name, DRNAREA, area_sqkm, StatName, percentile, flow_cms), values = flow_cms, basin_area = as.numeric(unique(preds$area_sqkm)))
+  preds <- preds %>% mutate(logYield = log(Yield_mm))
+  # stream stats low flow, 7 day 10 year
+  lowflow <- streamstats %>% 
+    filter(site_name == sitename, StatName == "7 Day 10 Year Low Flow") %>% 
+    mutate(flow_cms = Value*0.02831683199881, area_sqkm = DRNAREA*2.58999)
+  lowflow <- add_daily_yield(data = lowflow %>% select(site_id, site_name, DRNAREA, area_sqkm, StatName, flow_cms), values = flow_cms, basin_area = as.numeric(unique(lowflow$area_sqkm)))
+  lowflow <- lowflow %>% mutate(logYield = log(Yield_mm))
+  # calculate exceedance probability by site
+  exceeddat <- obs %>% 
+    filter(!is.na(logYield)) %>%
+    arrange(desc(logYield)) %>%
+    mutate(exceedance = 100/length(logYield)*1:length(logYield))
+  # plot
+  print(ggplot() +
+    geom_line(data = exceeddat, aes(x = exceedance, y = logYield), size = 1) +
+    geom_line(data = preds, aes(x = percentile, y = logYield), color = "red") + 
+    geom_point(data = preds, aes(x = percentile, y = logYield), color = "red") +
+    geom_abline(intercept = unlist(lowflow$logYield), slope = 0, color = "red", linetype = "dashed") +
+    xlab("Exceedance probability") + ylab("log(Yield, mm)") + ggtitle(sitename) +
+    theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()))
+}  
+
+myplotfun_ex("Avery Brook")
+myplotfun_ex("Sanderson Brook")
+myplotfun_ex("Obear Brook Lower")
+myplotfun_ex("Mitchell Brook")
+myplotfun_ex("West Brook Reservoir")
+myplotfun_ex("West Brook Upper")
+myplotfun_ex("West Brook NWIS")
+```
+
+```{r}
+# set up
+vars <- unique(massach$StatName)[grep("Duration", unique(massach$StatName))][-1]
+sites <- c("West Brook NWIS", "Mitchell Brook", "Obear Brook Lower", "West Brook Upper", "Sanderson Brook", "Avery Brook")
+preds <- list()
+exceed <- list()
+joined <- list()
+joined_full <- list()
+
+# calcualate 
+for (i in 1:length(sites)) {
+  obs <- dat_clean %>% filter(site_name == sites[i])
+  # stream stats duration
+  p <- streamstats %>% 
+    filter(site_name == unique(obs$site_name), StatName %in% vars) %>% 
+    mutate(exceedance = parse_number(StatName)) %>% 
+    mutate(flow_cms = Value*0.02831683199881, area_sqkm = DRNAREA*2.58999)
+  p <- add_daily_yield(data = p %>% select(site_id, site_name, DRNAREA, area_sqkm, StatName, exceedance, flow_cms), values = flow_cms, basin_area = as.numeric(unique(p$area_sqkm)))
+  p <- p %>% mutate(logYield = log(Yield_mm))
+  preds[[i]] <- p
+  # calculate exceedance probability by site
+  exceeddat <- obs %>% 
+    filter(!is.na(logYield)) %>%
+    arrange(desc(logYield)) %>%
+    mutate(exceedance = 100/length(logYield)*1:length(logYield))
+  exceed[[i]] <- exceeddat
+  # join observed and streamstats exceedance, calculate error
+  j <- exceeddat %>% 
+    select(site_name, exceedance, logYield) %>%
+    mutate(exceedance = round(exceedance, digits = 0)) %>%
+    group_by(site_name, exceedance) %>%
+    summarize(logYield = mean(logYield)) %>%
+    ungroup() %>%
+    left_join(p %>%
+                select(site_name, exceedance, logYield) %>%
+                rename(logYield_ss = logYield)) %>%
+    mutate(error_abs = logYield_ss - logYield,
+           error_abs_real = exp(logYield_ss) - exp(logYield),
+           error_rel = (exp(logYield_ss) - exp(logYield)) / exp(logYield))
+  joined[[i]] <- j %>% filter(!is.na(error_abs))
+  joined_full[[i]] <- j
+}
+preds <- do.call(rbind, preds) %>% mutate(site_name = factor(site_name, levels = wborder))
+exceed <- do.call(rbind, exceed) %>% mutate(site_name = factor(site_name, levels = wborder))
+joined <- do.call(rbind, joined) %>% mutate(site_name = factor(site_name, levels = wborder))
+joined_full <- do.call(rbind, joined_full)
+joined_mean <- joined %>% group_by(exceedance) %>% summarize(error_abs = mean(error_abs, na.rm = TRUE))
+
+# preds <- preds %>% mutate(site_name = factor(site_name, levels = sites))
+# exceed <- exceed %>% mutate(site_name = factor(site_name, levels = sites))
+# joined <- joined %>% mutate(site_name = factor(site_name, levels = sites))
+
+# calculate among size variation for StreamStats and observed exceedance 
+vardat_ss <- joined %>% group_by(exceedance) %>% summarize(exdsd = sd(logYield_ss))
+vardat_obs <- joined_full %>% group_by(exceedance) %>% summarize(exdsd = sd(logYield))
+
+# tibble for site labels
+siteslabs <- tibble(site_name = factor(sites, levels = sites), site_lab = c("WB0", "Mitchell", "Obear Lower", "WB Upper", "Sanderson", "Avery"))
+```
+
+Plot observed (colored lines) and modeled (black points/lines) exceedance curves
+```{r}
+mypal <- cet_pal(length(wborder), name = "i1")[c(1,3,5,6,8,9)]
+
+### Colored by site
+# exceedance curves
+p1 <- ggplot() +
+  geom_line(data = exceed, aes(x = exceedance, y = logYield, color = site_name), size = 1) +
+  geom_line(data = preds, aes(x = exceedance, y = logYield), color = "black") + 
+  geom_point(data = preds, aes(x = exceedance, y = logYield), color = "black") +
+  geom_text(data = siteslabs, aes(x = Inf, y = Inf, label = site_lab), vjust = 1.5, hjust = 1.05, size = 3) +
+  facet_wrap(~site_name, nrow = 3) +
+  scale_color_manual(values = mypal) +
+  xlab("Exceedance probability") + ylab(expression(paste("log(specific discharge, mm day"^-1, ")", sep = ""))) +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                     panel.grid = element_blank(), strip.text.x = element_blank(), strip.background = element_blank(),
+                     legend.position = "none", axis.text = element_text(color = "black"))
+# absolute error
+p2 <- ggplot(data = joined) +
+  geom_line(aes(x = exceedance, y = error_abs, group = site_name, color = site_name)) +
+  geom_point(aes(x = exceedance, y = error_abs, group = site_name, color = site_name)) +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  geom_line(data = joined_mean, aes(x = exceedance, y = error_abs), size = 1) +
+  scale_color_manual(values = mypal) +
+  xlab("Exceedance probability") + ylab("Error (modeled - observed)") + ylim(-2.1,0) +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                     legend.position = "none", axis.text = element_text(color = "black"))
+# combine
+annotate_figure(ggarrange(p1, p2, ncol = 2, labels = "auto"), top = text_grob("The West Brook, Massachusetts"))
+```
+
+
+Does StreamStats misrepresent among-site variation in flow duration?
+```{r}
+p1 <- ggplot() +
+  geom_line(data = vardat_obs, aes(x = exceedance, y = exdsd), size = 1, color = "grey60") +
+  geom_line(data = vardat_ss, aes(x = exceedance, y = exdsd), color = "black") + 
+  geom_point(data = vardat_ss, aes(x = exceedance, y = exdsd), color = "black") +
+  xlab("Exceedance probability") + ylab("Among-site standard deviation in log(Yield, mm)") +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+p2 <- vardat_obs %>% 
+  left_join(vardat_ss %>% rename(exdsd_ss = exdsd)) %>% 
+  mutate(diff = exdsd_ss - exdsd) %>%
+  filter(!is.na(diff)) %>%
+  ggplot() +
+  geom_line(aes(x = exceedance, y = diff)) +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  xlab("Exceedance probability") + ylab("Difference") +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) 
+
+annotate_figure(ggarrange(p1, p2, ncol = 2, labels = "auto"), top = text_grob("The West Brook, Massachusetts"))
+```
+
+Write to file
+```{r, results='hide', eval=FALSE}
+mypal <- cet_pal(length(wborder), name = "i1")[c(1,3,5,6,8,9)]
+
+### Colored by site
+# exceedance curves
+p1 <- ggplot() +
+  geom_line(data = exceed, aes(x = exceedance, y = logYield, color = site_name), size = 1) +
+  geom_line(data = preds, aes(x = exceedance, y = logYield), color = "black") + 
+  geom_point(data = preds, aes(x = exceedance, y = logYield), color = "black") +
+  geom_text(data = siteslabs, aes(x = Inf, y = Inf, label = site_lab), vjust = 1.5, hjust = 1.05, size = 3) +
+  facet_wrap(~site_name, nrow = 3) +
+  scale_color_manual(values = mypal) +
+  xlab("Exceedance probability") + ylab(expression(paste("log(specific discharge, mm day"^-1, ")", sep = ""))) +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                     panel.grid = element_blank(), strip.text.x = element_blank(), strip.background = element_blank(),
+                     legend.position = "none", axis.text = element_text(color = "black"))
+# absolute error
+p2 <- ggplot(data = joined) +
+  geom_line(aes(x = exceedance, y = error_abs, group = site_name, color = site_name)) +
+  geom_point(aes(x = exceedance, y = error_abs, group = site_name, color = site_name)) +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  geom_line(data = joined_mean, aes(x = exceedance, y = error_abs), size = 1) +
+  scale_color_manual(values = mypal) +
+  xlab("Exceedance probability") + ylab("Error (modeled - observed)") + ylim(-2.1,0) +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                     legend.position = "none", axis.text = element_text(color = "black"))
+# combine
+jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/StreamStats_WestBrook.jpg", width = 6, height = 4, units = "in", res = 1000)
+annotate_figure(ggarrange(p1, p2, ncol = 2, labels = "auto"), top = text_grob("The West Brook, Massachusetts"))
+dev.off()
+```
+
+
+
+
+### Flathead mean monthly yield
+
+For the Flathead (Big Creek), plot observed and StreamStats mean monthly flow/yield and calculate absolute error
+```{r eval=FALSE, include=FALSE}
+vars <- unique(montana$StatName)[grep("Mean Flow", unique(montana$StatName))]
+
+# create plotting function
+myplotfun_mon <- function(sitename) {
+  # filter observed data
+  obs <- dat_clean %>% 
+  filter(site_name == sitename) %>%
+    mutate(MonthName = factor(MonthName, levels = c("Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep")))
+  # calculate monthly means
+  obs_mon <- obs %>%
+    group_by(WaterYear, MonthName) %>%
+    summarize(logYield = mean(logYield)) %>%
+    ungroup() %>%
+    mutate(MonthName = factor(MonthName, levels = c("Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep")),
+           WaterYear = factor(WaterYear)) %>% 
+    complete(WaterYear, MonthName)
+  # get monthly min/max for ribbon
+  hull <- obs_mon %>% 
+    group_by(MonthName) %>% 
+    summarize(min_logYield = min(logYield, na.rm = TRUE), max_logYield = max(logYield, na.rm = TRUE)) %>% 
+    ungroup()
+  # get StreamStats mean monthly flow
+  preds <- streamstats %>% 
+    filter(site_name == sitename, StatName %in% vars, !is.na(AreaSqMi)) %>% 
+    mutate(MonthName = substr(StatName, 1, nchar(StatName)-10),
+           Month = parse_number(StatLabel)) %>% 
+    mutate(MonthName = factor(recode(MonthName, "January" = "Jan", "February" = "Feb", "March" = "Mar", "April" = "Apr", "June" = "Jun", "July" = "Jul", "August" = "Aug", "September" = "Sep", "October" = "Oct", "November" = "Nov", "December" = "Dec"), levels = c("Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"))) %>%
+    mutate(flow_cms = Value*0.02831683199881, area_sqkm = AreaSqMi*2.58999)
+  preds <- add_daily_yield(data = preds %>% select(site_id, site_name, area_sqkm, MonthName, Month, flow_cms), values = flow_cms, basin_area = as.numeric(unique(preds$area_sqkm)))
+  preds <- preds %>% mutate(logYield = log(Yield_mm))
+  # stream stats low flow, 7 day 10 year
+  lowflow <- streamstats %>% 
+    filter(site_name == sitename, StatName == "7 Day 10 Year Low Flow") %>% 
+    mutate(flow_cms = Value*0.02831683199881, area_sqkm = DRNAREA*2.58999)
+  lowflow <- add_daily_yield(data = lowflow %>% select(site_id, site_name, DRNAREA, area_sqkm, StatName, flow_cms), values = flow_cms, basin_area = as.numeric(unique(lowflow$area_sqkm)))
+  lowflow <- lowflow %>% mutate(logYield = log(Yield_mm))
+  # plot
+  print(ggplot() +
+          geom_ribbon(data = hull, aes(ymin = min_logYield, ymax = max_logYield, x = as.numeric(MonthName)), fill = "gray") +
+          geom_line(data = obs_mon, aes(y = logYield, x = as.numeric(MonthName), group = WaterYear)) +
+          geom_point(data = obs_mon, aes(y = logYield, x = as.numeric(MonthName), group = WaterYear, shape = WaterYear)) +
+          geom_line(data = preds, aes(y = logYield, x = as.numeric(MonthName), group = site_name), color = "red") +
+          geom_point(data = preds, aes(y = logYield, x = as.numeric(MonthName)), color = "red") +
+          geom_abline(intercept = unlist(lowflow$logYield), slope = 0, color = "red", linetype = "dashed") +
+          theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +  
+          ylab("Monthly mean log(Yield, mm/day)") + xlab("Month") + ggtitle(sitename) +
+          scale_x_continuous(breaks = 1:12, labels = levels(obs_mon$MonthName)))
+}
+
+myplotfun_mon("Big Creek NWIS")
+myplotfun_mon("Hallowat Creek NWIS")
+myplotfun_mon("WernerCreek")
+myplotfun_mon("LangfordCreekUpper")
+myplotfun_mon("HallowattCreekLower")
+
+```
+
+```{r}
+# set up
+vars <- unique(montana$StatName)[grep("Mean Flow", unique(montana$StatName))]
+sites <- c("LangfordCreekUpper", "Big Creek NWIS", "HallowattCreekLower", "WernerCreek", "Hallowat Creek NWIS",   "McGeeCreekLower")
+preds_list <- list()
+obs_list <- list()
+hull_list <- list()
+join_list <- list()
+
+# calcualate 
+for (i in 1:length(sites)) {
+  # filter observed data
+  obs <- dat_clean %>% 
+  filter(site_name == sites[i]) %>%
+    mutate(MonthName = factor(MonthName, levels = c("Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep")))
+  # calculate monthly means
+  obs_mon <- obs %>%
+    group_by(site_name, WaterYear, MonthName) %>%
+    summarize(logYield = mean(logYield)) %>%
+    ungroup() %>%
+    mutate(MonthName = factor(MonthName, levels = c("Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep")),
+           WaterYear = factor(WaterYear)) %>% 
+    complete(site_name, WaterYear, MonthName)
+  # get monthly min/max for ribbon
+  hull <- obs_mon %>% 
+    group_by(site_name, MonthName) %>% 
+    summarize(min_logYield = min(logYield, na.rm = TRUE), max_logYield = max(logYield, na.rm = TRUE)) %>% 
+    ungroup()
+  # get StreamStats mean monthly flow
+  preds <- streamstats %>% 
+    filter(site_name == sites[i], StatName %in% vars, !is.na(AreaSqMi)) %>% 
+    mutate(MonthName = substr(StatName, 1, nchar(StatName)-10),
+           Month = parse_number(StatLabel)) %>% 
+    mutate(MonthName = factor(recode(MonthName, "January" = "Jan", "February" = "Feb", "March" = "Mar", "April" = "Apr", "June" = "Jun", "July" = "Jul", "August" = "Aug", "September" = "Sep", "October" = "Oct", "November" = "Nov", "December" = "Dec"), levels = c("Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"))) %>%
+    mutate(flow_cms = Value*0.02831683199881, area_sqkm = AreaSqMi*2.58999)
+  preds <- add_daily_yield(data = preds %>% select(site_id, site_name, area_sqkm, MonthName, Month, flow_cms), values = flow_cms, basin_area = as.numeric(unique(preds$area_sqkm)))
+  preds <- preds %>% mutate(logYield = log(Yield_mm))
+  # join and calculate error
+  join_list[[i]] <- obs_mon %>%
+    left_join(preds %>% select(site_name, MonthName, logYield) %>% rename(logYield_ss = logYield)) %>%
+    mutate(error_abs = logYield_ss - logYield,
+           error_abs_real = exp(logYield_ss) - exp(logYield),
+           error_rel = (exp(logYield_ss) - exp(logYield)) / exp(logYield))
+  # store in list
+  preds_list[[i]] <- preds
+  obs_list[[i]] <- obs_mon
+  hull_list[[i]] <- hull
+}
+preds <- do.call(rbind, preds_list) %>% mutate(site_name = factor(site_name, levels = flatorder))
+obs_mon <- do.call(rbind, obs_list) %>% mutate(site_name = factor(site_name, levels = flatorder))
+hull <- do.call(rbind, hull_list) %>% mutate(site_name = factor(site_name, levels = flatorder))
+joined <- do.call(rbind, join_list) %>% mutate(site_name = factor(site_name, levels = flatorder))
+joined_mean <- joined %>% group_by(MonthName) %>% summarise(error_abs = mean(error_abs, na.rm = TRUE))
+
+# tibble for site labels
+siteslabs <- tibble(site_name = factor(sites, levels = flatorder), site_lab = c("Langford", "Big", "Hallowatt Lower", "Werner", "Hallowatt Upper", "McGee"))
+
+# calculate among site variation for StreamStats and observed mean monthly flow (mean across years) 
+vardat <- preds %>% 
+  group_by(MonthName) %>% 
+  summarize(qsd_ss = sd(logYield)) %>%
+  ungroup() %>%
+  left_join(obs_mon %>% 
+  group_by(site_name, MonthName) %>% 
+  summarize(logYield = mean(logYield, na.rm = TRUE)) %>% 
+  ungroup() %>% 
+  group_by(MonthName) %>%
+  summarize(qsd_obs = sd(logYield)) %>%
+  ungroup()) %>%
+  mutate(diff = qsd_ss - qsd_obs, nummon = as.numeric(MonthName))
+```
+
+
+Plot observed and modeled mean monthly flow
+```{r}
+mypal <- cet_pal(length(flatorder), name = "i1")[c(3,4,6,8,9,17)]
+
+### Colored by site
+# observed and StreamStats monthly flow
+p1 <- ggplot() +
+  geom_ribbon(data = hull, aes(ymin = min_logYield, ymax = max_logYield, x = as.numeric(MonthName), fill = site_name), alpha = 0.3) +
+  geom_line(data = obs_mon, aes(y = logYield, x = as.numeric(MonthName), group = WaterYear, color = site_name)) +
+  geom_point(data = obs_mon, aes(y = logYield, x = as.numeric(MonthName), group = WaterYear, shape = WaterYear, color = site_name)) +
+  geom_line(data = preds, aes(y = logYield, x = as.numeric(MonthName), group = site_name), color = "black") +
+  geom_point(data = preds, aes(y = logYield, x = as.numeric(MonthName)), color = "black") +
+  geom_text(data = siteslabs, aes(x = -Inf, y = Inf, label = site_lab), vjust = 1.5, hjust = -0.05, size = 3) +
+  facet_wrap(~site_name, ncol = 2) +
+  scale_color_manual(values = mypal) +
+  scale_fill_manual(values = mypal) +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "none", 
+                     strip.text.x = element_blank(), strip.background = element_blank()) +  
+  ylab(expression(paste("Monthly mean log(specific discharge, mm day"^-1, ")", sep = ""))) + xlab("Month") +
+  scale_x_continuous(breaks = 1:12, labels = c("O", "N", "D", "J", "F", "M", "A", "M", "J", "J", "A", "S"))
+# absolute error by month
+p2 <- ggplot() +
+  geom_line(data = joined, aes(x = as.numeric(MonthName), y = error_abs, shape = WaterYear, color = site_name)) +
+  geom_point(data = joined, aes(x = as.numeric(MonthName), y = error_abs, shape = WaterYear, color = site_name)) +
+  geom_line(data = joined_mean, aes(x = as.numeric(MonthName), y = error_abs), size = 1) +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  scale_color_manual(values = mypal) +
+  xlab("Month") + ylab("Error (modeled - observed)") +
+  scale_x_continuous(breaks = 1:12, labels = c("O", "N", "D", "J", "F", "M", "A", "M", "J", "J", "A", "S")) +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                     legend.position = "none")
+# combine
+annotate_figure(ggarrange(p1, p2, ncol = 2, labels = "auto"), top = text_grob("North Fork Flathead River, Montana"))
+```
+
+
+Does StreamStats misrepresent among-site variation in mean monthly yield?
+```{r}
+p1 <- vardat %>%
+  ggplot() +
+  geom_line(aes(x = nummon, y = qsd_obs), size = 1, color = "grey60") +
+  geom_line(aes(x = nummon, y = qsd_ss), color = "black") + 
+  geom_point(aes(x = nummon, y = qsd_ss), color = "black") +
+  xlab("Month") + ylab("Among-site standard deviation in log(Yield, mm)") +
+  scale_x_continuous(breaks = 1:12, labels = c("O", "N", "D", "J", "F", "M", "A", "M", "J", "J", "A", "S")) +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+p2 <- vardat %>%
+  ggplot() +
+  geom_line(aes(x = nummon, y = diff)) + 
+  xlab("Month") + ylab("Difference") +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  scale_x_continuous(breaks = 1:12, labels = c("O", "N", "D", "J", "F", "M", "A", "M", "J", "J", "A", "S")) +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+annotate_figure(ggarrange(p1, p2, ncol = 2, labels = "auto"), top = text_grob("North Fork Flathead River, Montana"))
+```
+
+
+
+Write to file
+```{r, results='hide', eval=FALSE}
+mypal <- cet_pal(length(flatorder), name = "i1")[c(3,4,6,8,9,17)]
+
+### Colored by site
+# observed and StreamStats monthly flow
+p1 <- ggplot() +
+  geom_ribbon(data = hull, aes(ymin = min_logYield, ymax = max_logYield, x = as.numeric(MonthName), fill = site_name), alpha = 0.3) +
+  geom_line(data = obs_mon, aes(y = logYield, x = as.numeric(MonthName), group = WaterYear, color = site_name)) +
+  geom_point(data = obs_mon, aes(y = logYield, x = as.numeric(MonthName), group = WaterYear, shape = WaterYear, color = site_name)) +
+  geom_line(data = preds, aes(y = logYield, x = as.numeric(MonthName), group = site_name), color = "black") +
+  geom_point(data = preds, aes(y = logYield, x = as.numeric(MonthName)), color = "black") +
+  geom_text(data = siteslabs, aes(x = -Inf, y = Inf, label = site_lab), vjust = 1.5, hjust = -0.05, size = 3) +
+  facet_wrap(~site_name, ncol = 2) +
+  scale_color_manual(values = mypal) +
+  scale_fill_manual(values = mypal) +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), legend.position = "none", 
+                     strip.text.x = element_blank(), strip.background = element_blank()) +  
+  ylab(expression(paste("Monthly mean log(specific discharge, mm day"^-1, ")", sep = ""))) + xlab("Month") +
+  scale_x_continuous(breaks = 1:12, labels = c("O", "N", "D", "J", "F", "M", "A", "M", "J", "J", "A", "S"))
+# absolute error by month
+p2 <- ggplot() +
+  geom_line(data = joined, aes(x = as.numeric(MonthName), y = error_abs, shape = WaterYear, color = site_name)) +
+  geom_point(data = joined, aes(x = as.numeric(MonthName), y = error_abs, shape = WaterYear, color = site_name)) +
+  geom_line(data = joined_mean, aes(x = as.numeric(MonthName), y = error_abs), size = 1) +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  scale_color_manual(values = mypal) +
+  xlab("Month") + ylab("Error (modeled - observed)") +
+  scale_x_continuous(breaks = 1:12, labels = c("O", "N", "D", "J", "F", "M", "A", "M", "J", "J", "A", "S")) +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                     legend.position = "none")
+# combine
+jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/StreamStats_Flathead.jpg", width = 6, height = 4, units = "in", res = 1000)
+annotate_figure(ggarrange(p1, p2, ncol = 2), top = text_grob("North Fork Flathead River, Montana"))
+dev.off()
+```
+

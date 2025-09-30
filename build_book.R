@@ -15,24 +15,25 @@ quarto::quarto_render("index.qmd",
                       cache_refresh = TRUE, 
                       output_format = "html")
 
-quarto::quarto_render("Qualitative/Overview.qmd", 
+quarto::quarto_render("GatherFlowClimateData.qmd", 
                       cache_refresh = TRUE, # default is FALSE
                       output_format = "html")
 
-quarto::quarto_render("Qualitative/SpaceTimeVar.qmd", 
+quarto::quarto_render("SpaceTimeVar.qmd", 
                       #cache_refresh = TRUE, # default is FALSE
                       output_format = "html")
 
-quarto::quarto_render("Qualitative/ModeledQ.qmd", 
+quarto::quarto_render("VarByClimate.qmd", 
                       #cache_refresh = TRUE, # default is FALSE
                       output_format = "html")
 
-quarto::quarto_render("Qualitative/LowFlow.qmd", 
+quarto::quarto_render("ReferenceLowFlow.qmd", 
                       cache_refresh = TRUE, # default is FALSE
                       output_format = "html")
 
-
-quarto::quarto_render("FluvialSynch/FluvialSynch.qmd", 
-                      cache_refresh = TRUE, # default is FALSE
+quarto::quarto_render("ModeledQ_StreamStats.qmd", 
+                      #cache_refresh = TRUE, # default is FALSE
                       output_format = "html")
+
+
 

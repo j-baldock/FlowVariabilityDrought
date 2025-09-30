@@ -20,6 +20,9 @@ book:
     - index.qmd
     - GatherFlowClimateData.qmd
     - SpaceTimeVar.qmd
+    - VarByClimate.qmd
+    - ReferenceLowFlow.qmd
+    - ModeledQ_StreamStats.qmd
 
 
 format:
