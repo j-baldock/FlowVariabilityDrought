@@ -675,6 +675,110 @@ egg::ggarrange(
 # dev.off()
 ```
 
+#### Exceedance
+
+Prep data and write functions
+```{r}
+exceedance <- dat_clean %>% filter(!is.na(Yield_mm)) %>% 
+  group_by(site_name, basin, region) %>% 
+  arrange(desc(logYield), .by_group = TRUE) %>% 
+  mutate(exceedance = 100/length(logYield)*1:length(logYield)) %>%
+  ungroup()
+
+exceedance_big <- dat_clean_big %>% filter(!is.na(Yield_mm)) %>% 
+  group_by(site_name, basin, region) %>% 
+  arrange(desc(logYield), .by_group = TRUE) %>% 
+  mutate(exceedance = 100/length(logYield)*1:length(logYield)) %>%
+  ungroup()
+
+fncExceedPlot <- function(myord, mybas) {
+  p1 <- ggplot() +
+  geom_line(data = exceedance %>% filter(basin == mybas), 
+            aes(x = exceedance, y = logYield, color = factor(site_name, levels = myord))) +
+  geom_line(data = exceedance_big %>% filter(basin == mybas), 
+            aes(x = exceedance, y = logYield), color = "grey40") +
+  scale_color_manual(values = cet_pal(length(myord), name = "i1")) +
+  #ylim(-3,2) +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        legend.position = "none", 
+        axis.title = element_blank(), plot.margin = margin(t = 1, r = 5, b = 2, l = 2), 
+        axis.text = element_text(color = "black"))
+  return(p1)
+}
+
+
+fncKSpvals <- function(myord, mybas, type = c("plot", "tibble")) {
+  mypvals <- tibble(site_name = rep(NA, times = length(myord)), pval = rep(NA, times = length(myord)))
+  for (i in 1:length(myord)) {
+    big_exc <- exceedance_big$logYield[exceedance_big$basin == mybas]
+    lit_exc <- exceedance$logYield[exceedance$site_name == myord[i]]
+    mytest <- ks.test(big_exc, lit_exc, exact = TRUE)
+    mypvals$site_name[i] <- myord[i]
+    mypvals$pval[i] <- mytest$p.value
+  }
+  mypvals$sig_05 <- mypvals$pval < 0.05
+  mypvals$sig_bfc <- mypvals$pval < (0.05 / length(myord))
+  p1_bp <- mypvals %>% ggplot(aes(x = 1, y = pval)) + geom_boxplot() + theme_bw() + 
+    geom_abline(intercept = 0.05/length(myord), slope = 0, linetype = "dashed") +
+    ylim(0, 0.05/length(myord)) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+          legend.position = "none", 
+          axis.title = element_blank(), plot.margin = margin(t = 1, r = 5, b = 2, l = 2), 
+          axis.text = element_text(color = "black"))
+  
+  ifelse(type == "plot", return(p1_bp), return(mypvals))
+  
+}
+```
+
+Show exceedance curves
+```{r  fig.width=2.5, fig.height=11}
+egg::ggarrange(fncExceedPlot(myord = wborder, mybas = "West Brook"),
+               fncExceedPlot(myord = stauntorder, mybas = "Staunton River"),
+               fncExceedPlot(myord = paineorder, mybas = "Paine Run"),
+               fncExceedPlot(myord = flatorder, mybas = "Flathead"),
+               fncExceedPlot(myord = yellorder, mybas = "Shields River"),
+               fncExceedPlot(myord = snakeorder, mybas = "Snake River"),
+               fncExceedPlot(myord = donnerorder, mybas = "Donner Blitzen"),
+               nrow = 7)
+
+jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/EcoD_summerexceedance_all_noborder.jpg", width = 2, height = 11, units = "in", res = 1000)
+egg::ggarrange(fncExceedPlot(myord = wborder, mybas = "West Brook"),
+               fncExceedPlot(myord = stauntorder, mybas = "Staunton River"),
+               fncExceedPlot(myord = paineorder, mybas = "Paine Run"),
+               fncExceedPlot(myord = flatorder, mybas = "Flathead"),
+               fncExceedPlot(myord = yellorder, mybas = "Shields River"),
+               fncExceedPlot(myord = snakeorder, mybas = "Snake River"),
+               fncExceedPlot(myord = donnerorder, mybas = "Donner Blitzen"),
+               nrow = 7)
+dev.off()
+```
+
+Are any headwater gage distributions of streamflow not statistically different reference gages? Kolmorgorov-Smirnov tests with Bonferroni correction for multiple comparisons. `TRUE` for any basin means that at least one headwater gage is not statistically different from the reference gage
+```{r}
+any(!fncKSpvals(myord = wborder, mybas = "West Brook", type = "tibble")$sig_bfc)
+any(!fncKSpvals(myord = stauntorder, mybas = "Staunton River", type = "tibble")$sig_bfc)
+any(!fncKSpvals(myord = paineorder, mybas = "Paine Run", type = "tibble")$sig_bfc)
+any(!fncKSpvals(myord = flatorder, mybas = "Flathead", type = "tibble")$sig_bfc)
+any(!fncKSpvals(myord = yellorder, mybas = "Shields River", type = "tibble")$sig_bfc)
+any(!fncKSpvals(myord = snakeorder, mybas = "Snake River", type = "tibble")$sig_bfc)
+any(!fncKSpvals(myord = donnerorder, mybas = "Donner Blitzen", type = "tibble")$sig_bfc)
+```
+All `FALSE` means that all headwater gages are different from the reference gages. 
+
+Show distribution of p-values with Bonferroni correction limit
+```{r fig.width=2.5, fig.height=11}
+egg::ggarrange(fncKSpvals(myord = wborder, mybas = "West Brook", type = "plot"),
+               fncKSpvals(myord = stauntorder, mybas = "Staunton River", type = "plot"),
+               fncKSpvals(myord = paineorder, mybas = "Paine Run", type = "plot"),
+               fncKSpvals(myord = flatorder, mybas = "Flathead", type = "plot"),
+               fncKSpvals(myord = yellorder, mybas = "Shields River", type = "plot"),
+               fncKSpvals(myord = snakeorder, mybas = "Snake River", type = "plot"),
+               fncKSpvals(myord = donnerorder, mybas = "Donner Blitzen", type = "plot"),
+               nrow = 7)
+```
+
 
 ### Presentation figs
 
@@ -1401,7 +1505,7 @@ dist_euclidean <- dist_euclidean_wb
 # grab 
 sitesss <- mysites$site_name
 dat_clean2 <- dat_clean %>% filter(site_name %in% sitesss, Month %in% c(7:9))
-yrs <- unique(dat_clean2$WaterYear)[c(1:4)]
+yrs <- unique(dat_clean2$WaterYear)
 # set up empty arrays
 synch_arr_sp <- array(data = NA, dim = c(dim(dist_euclidean)[1], dim(dist_euclidean)[2], length(yrs)), 
                       dimnames = list(mysites$site_name, mysites$site_name, yrs))
@@ -1438,7 +1542,7 @@ dist_euclidean <- dist_euclidean_st
 # grab 
 sitesss <- mysites$site_name
 dat_clean2 <- dat_clean %>% filter(site_name %in% sitesss, Month %in% c(7:9))
-yrs <- unique(dat_clean2$WaterYear)[c(1:3)]
+yrs <- unique(dat_clean2$WaterYear)
 # set up empty arrays
 synch_arr_sp <- array(data = NA, dim = c(dim(dist_euclidean)[1], dim(dist_euclidean)[2], length(yrs)), 
                       dimnames = list(mysites$site_name, mysites$site_name, yrs))
@@ -1475,7 +1579,7 @@ dist_euclidean <- dist_euclidean_pa
 # grab 
 sitesss <- mysites$site_name
 dat_clean2 <- dat_clean %>% filter(site_name %in% sitesss, Month %in% c(7:9))
-yrs <- unique(dat_clean2$WaterYear)[2]
+yrs <- unique(dat_clean2$WaterYear)
 # set up empty arrays
 synch_arr_sp <- array(data = NA, dim = c(dim(dist_euclidean)[1], dim(dist_euclidean)[2], length(yrs)), 
                       dimnames = list(mysites$site_name, mysites$site_name, yrs))
@@ -1512,7 +1616,7 @@ dist_euclidean <- dist_euclidean_fl
 # grab 
 sitesss <- mysites$site_name
 dat_clean2 <- dat_clean %>% filter(site_name %in% sitesss, Month %in% c(7:9))
-yrs <- unique(dat_clean2$WaterYear)[c(2:5)]
+yrs <- unique(dat_clean2$WaterYear)
 # set up empty arrays
 synch_arr_sp <- array(data = NA, dim = c(dim(dist_euclidean)[1], dim(dist_euclidean)[2], length(yrs)), 
                       dimnames = list(mysites$site_name, mysites$site_name, yrs))
@@ -1549,7 +1653,7 @@ dist_euclidean <- dist_euclidean_ye
 # grab 
 sitesss <- mysites$site_name
 dat_clean2 <- dat_clean %>% filter(site_name %in% sitesss, Month %in% c(7:9))
-yrs <- unique(dat_clean2$WaterYear)[c(2,3,5)]
+yrs <- unique(dat_clean2$WaterYear)
 # set up empty arrays
 synch_arr_sp <- array(data = NA, dim = c(dim(dist_euclidean)[1], dim(dist_euclidean)[2], length(yrs)), 
                       dimnames = list(mysites$site_name, mysites$site_name, yrs))
@@ -1586,7 +1690,7 @@ dist_euclidean <- dist_euclidean_sn
 # grab 
 sitesss <- mysites$site_name
 dat_clean2 <- dat_clean %>% filter(site_name %in% sitesss, Month %in% c(7:9))
-yrs <- unique(dat_clean2$WaterYear)[c(1,3,4)]
+yrs <- unique(dat_clean2$WaterYear)
 # set up empty arrays
 synch_arr_sp <- array(data = NA, dim = c(dim(dist_euclidean)[1], dim(dist_euclidean)[2], length(yrs)), 
                       dimnames = list(mysites$site_name, mysites$site_name, yrs))
@@ -1623,7 +1727,7 @@ dist_euclidean <- dist_euclidean_db
 # grab 
 sitesss <- mysites$site_name
 dat_clean2 <- dat_clean %>% filter(site_name %in% sitesss, Month %in% c(7:9))
-yrs <- unique(dat_clean2$WaterYear)[c(2:4)]
+yrs <- unique(dat_clean2$WaterYear)
 # set up empty arrays
 synch_arr_sp <- array(data = NA, dim = c(dim(dist_euclidean)[1], dim(dist_euclidean)[2], length(yrs)), 
                       dimnames = list(mysites$site_name, mysites$site_name, yrs))
@@ -1955,7 +2059,7 @@ print(fs_ts)
 ```
 
 
-```{r message=FALSE, warning=FALSE, fig.width = 8, fig.height=10}
+```{r eval=FALSE, message=FALSE, warning=FALSE, fig.width = 8, fig.height=10}
 ggarrange(fluvsynchfun_mod(subbas = "West Brook", spear = synch_arr_sp_wb, ts = synch_arr_ts_wb,
                                 dist_euc = dist_euclidean_wb, dist_wat = dist_watercourse_wb, dist_flow = dist_flowconn_wb),
                fluvsynchfun_mod(subbas = "Staunton River", spear = synch_arr_sp_st, ts = synch_arr_ts_st,
@@ -1979,4 +2083,179 @@ ggarrange(fluvsynchfun_mod(subbas = "West Brook", spear = synch_arr_sp_wb, ts = 
 ```
 
 
+#### Polished
+
+Combine tibbles
+```{r}
+synchtibbig <- bind_rows(
+  # West Brook
+  tibble(basin = "West Brook", 
+       year = rep(as.numeric(dimnames(synch_arr_ts_wb)[[3]]), each = dim(synch_arr_ts_wb)[1]*dim(synch_arr_ts_wb)[2]),
+       dist_eucl = rep(c(dist_euclidean_wb), times = dim(synch_arr_ts_wb)[3]),
+       dist_flow = rep(c(dist_flowconn_wb), times = dim(synch_arr_ts_wb)[3]),
+       synch_ts = c(synch_arr_ts_wb),
+       synch_sp = c(synch_arr_sp_wb)) %>%
+  filter(!is.na(dist_eucl)),
+  # Staunton River
+  tibble(basin = "Staunton River", 
+       year = rep(as.numeric(dimnames(synch_arr_ts_st)[[3]]), each = dim(synch_arr_ts_st)[1]*dim(synch_arr_ts_st)[2]),
+       dist_eucl = rep(c(dist_euclidean_st), times = dim(synch_arr_ts_st)[3]),
+       dist_flow = rep(c(dist_flowconn_st), times = dim(synch_arr_ts_st)[3]),
+       synch_ts = c(synch_arr_ts_st),
+       synch_sp = c(synch_arr_sp_st)) %>%
+  filter(!is.na(dist_eucl)),
+  # Paine Run
+  tibble(basin = "Paine Run", 
+       year = rep(as.numeric(dimnames(synch_arr_ts_pa)[[3]]), each = dim(synch_arr_ts_pa)[1]*dim(synch_arr_ts_pa)[2]),
+       dist_eucl = rep(c(dist_euclidean_pa), times = dim(synch_arr_ts_pa)[3]),
+       dist_flow = rep(c(dist_flowconn_pa), times = dim(synch_arr_ts_pa)[3]),
+       synch_ts = c(synch_arr_ts_pa),
+       synch_sp = c(synch_arr_sp_pa)) %>%
+  filter(!is.na(dist_eucl)),
+  # Flathead
+  tibble(basin = "Flathead River", 
+       year = rep(as.numeric(dimnames(synch_arr_ts_fl)[[3]]), each = dim(synch_arr_ts_fl)[1]*dim(synch_arr_ts_fl)[2]),
+       dist_eucl = rep(c(dist_euclidean_fl), times = dim(synch_arr_ts_fl)[3]),
+       dist_flow = rep(c(dist_flowconn_fl), times = dim(synch_arr_ts_fl)[3]),
+       synch_ts = c(synch_arr_ts_fl),
+       synch_sp = c(synch_arr_sp_fl)) %>%
+  filter(!is.na(dist_eucl)),
+  # Yellowstone
+  tibble(basin = "Yellowstone River", 
+       year = rep(as.numeric(dimnames(synch_arr_ts_ye)[[3]]), each = dim(synch_arr_ts_ye)[1]*dim(synch_arr_ts_ye)[2]),
+       dist_eucl = rep(c(dist_euclidean_ye), times = dim(synch_arr_ts_ye)[3]),
+       dist_flow = rep(c(dist_flowconn_ye), times = dim(synch_arr_ts_ye)[3]),
+       synch_ts = c(synch_arr_ts_ye),
+       synch_sp = c(synch_arr_sp_ye)) %>%
+  filter(!is.na(dist_eucl)),
+  # Snake River
+  tibble(basin = "Snake River", 
+       year = rep(as.numeric(dimnames(synch_arr_ts_sn)[[3]]), each = dim(synch_arr_ts_sn)[1]*dim(synch_arr_ts_sn)[2]),
+       dist_eucl = rep(c(dist_euclidean_sn), times = dim(synch_arr_ts_sn)[3]),
+       dist_flow = rep(c(dist_flowconn_sn), times = dim(synch_arr_ts_sn)[3]),
+       synch_ts = c(synch_arr_ts_sn),
+       synch_sp = c(synch_arr_sp_sn)) %>%
+  filter(!is.na(dist_eucl)),
+  # Donner Blitzen
+  tibble(basin = "Donner und Blitzen", 
+       year = rep(as.numeric(dimnames(synch_arr_ts_db)[[3]]), each = dim(synch_arr_ts_db)[1]*dim(synch_arr_ts_db)[2]),
+       dist_eucl = rep(c(dist_euclidean_db), times = dim(synch_arr_ts_db)[3]),
+       dist_flow = rep(c(dist_flowconn_db), times = dim(synch_arr_ts_db)[3]),
+       synch_ts = c(synch_arr_ts_db),
+       synch_sp = c(synch_arr_sp_db)) %>%
+  filter(!is.na(dist_eucl))
+) %>%
+  mutate(basin = factor(basin, levels = c("West Brook", "Staunton River", "Paine Run", "Flathead River", "Yellowstone River", "Snake River", "Donner und Blitzen")), 
+         basinyear = paste(basin, "_", year))
+
+```
+
+
+Plot raw/unstandardized data with LOESS smoothers by basin and year
+```{r}
+synchtibbig %>%
+  ggplot() +
+  geom_point(aes(x = (dist_eucl), y = (synch_ts), fill = basin), shape = 21, show.legend = FALSE) +
+  geom_smooth(aes(x = (dist_eucl), y = (synch_ts), color = basin, group = basinyear), 
+              span = 1, se = FALSE) +
+  geom_smooth(aes(x = (dist_eucl), y = (synch_ts)), 
+              span = 1, se = FALSE) +
+  scale_color_manual(values = (brewer.pal(7, "Set2"))) +
+  scale_fill_manual(values = (brewer.pal(7, "Set2"))) +
+  xlab("Euclidean distance (km)") + ylab("Time series distance") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        axis.text = element_text(color = "black"),
+        legend.position = c(.9,.75), legend.title = element_blank())
+
+
+jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/FluvialSynchrograms_combined.jpg", width = 5.5, height = 3.75, units = "in", res = 1000)
+synchtibbig %>%
+  ggplot() +
+  geom_point(aes(x = (dist_eucl), y = (synch_ts), fill = basin), shape = 21, show.legend = FALSE) +
+  geom_smooth(aes(x = (dist_eucl), y = (synch_ts), color = basin, group = basinyear), 
+              span = 1, se = FALSE) +
+  scale_color_manual(values = (brewer.pal(7, "Set2"))) +
+  scale_fill_manual(values = (brewer.pal(7, "Set2"))) +
+  xlab("Euclidean distance (km)") + ylab("Time series distance") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        axis.text = element_text(color = "black")
+        # legend.position = c(.83,.73), 
+        # legend.title = element_blank(), 
+        # legend.text = element_text(size = 7, margin = margin(l = 0, b = 0.1, t = 0.1)),
+        # legend.key.spacing.y = unit(0.01, "pt"),
+        # legend.background = element_rect(fill = "transparent", colour = NA)
+        #legend.position = "top",
+        )
+dev.off()
+```
+
+
+To allow for comparison across different sized basins and years that differ in water availability, z-score geographic distance by basin and z-score time series distance by basin and year. 
+```{r}
+z_synchtibbig <- synchtibbig %>%
+  group_by(basin) %>%
+  mutate(z_dist_eucl = scale(dist_eucl, center = TRUE, scale = TRUE)) %>%
+  ungroup() %>%
+  group_by(basin, year) %>%
+  mutate(z_synch_ts = scale(synch_ts, center = TRUE, scale = TRUE)) %>%
+  ungroup() %>%
+  mutate(basinyear = factor(basinyear))
+head(z_synchtibbig)
+```
+
+
+Fit mixed effects model: year nested within basin
+```{r}
+lmod <- lmer(z_synch_ts ~ z_dist_eucl + (1 + z_dist_eucl | basin/year), data = z_synchtibbig)
+summary(lmod)
+```
+
+Get p-values for global slope and intercept: (doesn't to run in Quarto...works fine in R)
+```{r}
+coef(summary(as_lmerModLmerTest(lmod)))
+```
+
+Plot std. euclidean distance by std. time series distance with mixed-effects model fit and basin and year specific regression lines
+```{r}
+# get predicted values and 95% credible interval
+effects_flsy <- effects::effect(term = "z_dist_eucl", mod = as_lmerModLmerTest(lmod), xlevels = list(z_dist_eucl = seq(min(z_synchtibbig$z_dist_eucl), max(z_synchtibbig$z_dist_eucl), length.out = 1000)), se = list(level = 0.95))
+effects_flsy <- as_tibble(effects_flsy)
+
+myplot <- z_synchtibbig %>%
+  ggplot() +
+  geom_point(aes(x = (z_dist_eucl), y = (z_synch_ts), fill = basin), shape = 21, show.legend = FALSE, alpha = 0.7) +
+  geom_smooth(aes(x = (z_dist_eucl), y = (z_synch_ts), color = basin, group = basinyear), span = 1, se = FALSE, method = "lm", alpha = 0.7, lineend = "round") +
+  geom_ribbon(data = effects_flsy, aes(x = z_dist_eucl, ymin = lower, ymax = upper), fill = "black", alpha = 0.2) +
+  geom_line(data = effects_flsy, aes(x = z_dist_eucl, y = fit), color = "black", size = 1.25, lineend = "round") +
+  scale_color_manual(values = (brewer.pal(7, "Set2"))) +
+  scale_fill_manual(values = (brewer.pal(7, "Set2"))) +
+  xlab("Euclidean distance (standardized)") + ylab("Time series distance (standardized)") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        axis.text = element_text(color = "black"), legend.title = element_blank())
+myplot
+
+# jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/FluvialSynchrograms_combined_modeled.jpg", width = 5.5, height = 3.75, units = "in", res = 1000)
+# myplot
+# dev.off()
+```
+
+Show non-linear relationships using LOESS, standardized data
+```{r}
+z_synchtibbig %>%
+  ggplot() +
+  geom_point(aes(x = (z_dist_eucl), y = (z_synch_ts), fill = basin), shape = 21, show.legend = FALSE) +
+  geom_smooth(aes(x = (z_dist_eucl), y = (z_synch_ts), color = basin, group = basinyear), 
+              span = 1, se = FALSE) +
+  geom_smooth(aes(x = (z_dist_eucl), y = (z_synch_ts)), 
+              span = 1, se = FALSE) +
+  scale_color_manual(values = (brewer.pal(7, "Set2"))) +
+  scale_fill_manual(values = (brewer.pal(7, "Set2"))) +
+  xlab("Euclidean distance (standardized)") + ylab("Time series distance (standardized)") +
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+        axis.text = element_text(color = "black"))
+```
 
