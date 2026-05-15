@@ -938,6 +938,11 @@ Set color palette
 mycols <- brewer.pal(7, "Set2")
 ```
 
+
+### Range diff.
+
+FLOW REGIME: Relative difference in the range of summer flow values across all little g's compared to range of flow values at big G.
+
 Some data manipulation
 ```{r}
 # define basin-years to keep
@@ -950,27 +955,6 @@ keepyears <- bind_rows(
   tibble(basin = "Snake River", WaterYear = c(2016:2024)),
   tibble(basin = "Donner Blitzen", WaterYear = c(2016:2024)),
 ) %>% mutate(keep = "yes")
-
-# standard deviation of median summer flow
-# dat_clean %>%
-#   filter(Month %in% c(7:9)) %>%
-#   group_by(basin, site_name, WaterYear) %>%
-#   summarize(medyield = median(logYield, na.rm = TRUE)) %>%
-#   ungroup() %>%
-#   group_by(basin, WaterYear) %>%
-#   summarize(sdyield = sd(medyield), nsites = n()) %>%
-#   ungroup() %>%
-#   left_join(wateravail %>% select(basin, WaterYear, totalyield:tyz_sum_perc)) %>%
-#   left_join(keepyears) %>% filter(keep == "yes") %>%
-#   mutate(basin = ifelse(basin == "Shields River", "Yellowstone River",
-#                         ifelse(basin == "Flathead", "Flathead River", basin))) %>%
-#   mutate(basin = factor(basin, levels = c("West Brook", "Piney River", "Staunton River", "Paine Run", "Flathead River", "Yellowstone River", "Snake River", "Donner Blitzen"))) %>%
-#   ggplot(aes(x = tyz_sum_perc, y = sdyield)) +
-#   geom_smooth(method = "lm", color = "black", aes(weight = nsites)) +
-#   geom_point(aes(fill = basin, size = nsites), shape = 21) +
-#   scale_fill_brewer(palette = "Set2") +
-#   #facet_wrap(~basin) +
-#   theme_bw() + theme(panel.grid = element_blank())
 
 
 # calculate relative difference in range as above
@@ -1009,7 +993,7 @@ boxplot(pe_range ~ basin, data = mydat, ylab = "Spatial streamflow heterogeneity
 ```
 
 
-### Fit model 
+#### Fit model 
 
 Use a random slope/random intercept mixed effects model to estimate the among-basin mean effect of regional water availability on spatial streamflow heterogeneity.
 
@@ -1051,8 +1035,12 @@ randiffplot <- ggplot() +
   theme_bw() + theme(panel.grid = element_blank(), axis.text = element_text(color = "black")) +
   ylab("Spatial streamflow heterogeneity (percent difference)") + xlab("Water availability (percentile)") +
   guides(fill = guide_legend(title = "Basin", override.aes = list(size = 5), order = 1), size = guide_legend(title = "Number of sites", order = 2)) +
-  geom_abline(intercept = 0, slope = 0, linetype = "dashed")
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  annotate("text", x = Inf, y = Inf, hjust = 1.1, vjust = 1.1, fontface = "italic",
+           label = paste("p = ", round(coef(summary(as_lmerModLmerTest(lmod)))[2,5], digits = 3)))
 randiffplot
+randiffplot1 <- randiffplot
+
 
 # write to file
 # jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/EcoD_RangeDiff_allsites2.jpg", width = 4.75, height = 5, units = "in", res = 1000)
@@ -1076,7 +1064,7 @@ print(rmod)
 ```
 
 
-### Sensitivity analysis
+#### Sensitivity analysis
 
 How sensitive are these results to the choice of data (log) transformation, per comments from John Hammond during USGS internal review?
 
@@ -1109,7 +1097,7 @@ mydat2 <- dat_clean %>%
 ```
 
 
-#### Range, un-logged
+##### Range, un-logged
 
 Fit the mixed effects model
 ```{r}
@@ -1142,7 +1130,9 @@ ggplot() +
 ```
 
 
-#### CV
+##### CV of summer flows
+
+Relative difference in the CV of summer flow values across all little g's compared to CV of flow values at big G
 
 Fig the mmixed effects model
 ```{r}
@@ -1175,6 +1165,172 @@ ggplot() +
 
 ```
 
+
+##### CV of time series distance
+
+FLOW REGIME: Spatial variation (CV) in the time series distance between each little g and corresponding big G (CV of TSdist)
+
+Some data manipulation
+```{r}
+# define basin-years to keep
+keepyears <- bind_rows(
+  tibble(basin = "West Brook", WaterYear = c(2020:2024)),
+  tibble(basin = "Paine Run", WaterYear = c(2019:2022)),
+  tibble(basin = "Staunton River", WaterYear = c(2019:2022)),
+  tibble(basin = "Flathead", WaterYear = c(2018:2024)),
+  tibble(basin = "Shields River", WaterYear = c(2016:2020,2022:2024)),
+  tibble(basin = "Snake River", WaterYear = c(2016:2024)),
+  tibble(basin = "Donner Blitzen", WaterYear = c(2016:2024)),
+) %>% mutate(keep = "yes")
+
+
+# calculate mean and cv of among little g time series distances
+mydat <- dat_clean %>% 
+  filter(Month %in% c(7:9)) %>%
+  left_join(dat_clean_big %>% 
+              filter(Month %in% c(7:9)) %>% 
+              select(basin, WaterYear, Yield_mm, logYield) %>% 
+              rename("bigYield_mm" = "Yield_mm", "biglogYield" = "logYield")) %>%
+  group_by(basin, site_name, WaterYear) %>%
+  summarize(tsdist = EuclideanDistance(Yield_mm, bigYield_mm),
+            tsdist_logvals = EuclideanDistance(logYield, biglogYield)) %>%
+  ungroup() %>%
+  group_by(basin, WaterYear) %>%
+  summarize(mean_tsd = mean(tsdist),
+            mean_tsdlog = mean(tsdist_logvals),
+            cv_tsd = sd(tsdist) / mean(tsdist),
+            cv_tsdlog = sd(tsdist_logvals) / mean(tsdist_logvals),
+            nsites = n()) %>%
+  ungroup() %>%
+  left_join(wateravail %>% select(basin, WaterYear, totalyield:tyz_sum_perc)) %>%
+  left_join(keepyears) %>% filter(keep == "yes") %>%
+  mutate(basin = ifelse(basin == "Shields River", "Yellowstone River",
+                        ifelse(basin == "Flathead", "Flathead River", 
+                               ifelse(basin == "Donner Blitzen", "Donner-Blitzen River", basin)))) %>%
+  mutate(basin = factor(basin, levels = c("West Brook", "Staunton River", "Paine Run", 
+                                          "Flathead River", "Yellowstone River", "Snake River", "Donner-Blitzen River"))) 
+
+mydat
+# 
+# mydat %>% 
+#   ggplot(aes(x = tyz_sum_perc, y = mean_tsd)) + 
+#   geom_point(aes(fill = basin, size = nsites), shape = 21) + 
+#   scale_fill_brewer(palette = "Set2") +
+#   theme_bw() + theme(panel.grid = element_blank(), axis.text = element_text(color = "black")) +
+#   ylab("Mean time series distance") + xlab("Water availability (percentile)") +
+#   geom_smooth(method = "lm") +
+#   guides(fill = guide_legend(title = "Basin", override.aes = list(size = 5), order = 1), size = guide_legend(title = "Number of sites", order = 2)) +
+#   geom_abline(intercept = 0, slope = 0, linetype = "dashed")
+#   
+# mydat %>% 
+#   ggplot(aes(x = tyz_sum_perc, y = mean_tsdlog)) + 
+#   geom_point(aes(fill = basin, size = nsites), shape = 21) + 
+#   scale_fill_brewer(palette = "Set2") +
+#   theme_bw() + theme(panel.grid = element_blank(), axis.text = element_text(color = "black")) +
+#   ylab("Mean time series distance (log vals)") + xlab("Water availability (percentile)") +
+#   geom_smooth(method = "lm") +
+#   guides(fill = guide_legend(title = "Basin", override.aes = list(size = 5), order = 1), size = guide_legend(title = "Number of sites", order = 2)) +
+#   geom_abline(intercept = 0, slope = 0, linetype = "dashed")
+#   
+# mydat %>% 
+#   ggplot(aes(x = tyz_sum_perc, y = cv_tsd)) + 
+#   geom_point(aes(fill = basin, size = nsites), shape = 21) + 
+#   scale_fill_brewer(palette = "Set2") +
+#   theme_bw() + theme(panel.grid = element_blank(), axis.text = element_text(color = "black")) +
+#   ylab("CV time series distance") + xlab("Water availability (percentile)") +
+#   geom_smooth(method = "lm") +
+#   guides(fill = guide_legend(title = "Basin", override.aes = list(size = 5), order = 1), size = guide_legend(title = "Number of sites", order = 2)) +
+#   geom_abline(intercept = 0, slope = 0, linetype = "dashed")
+#   
+# mydat %>% 
+#   ggplot(aes(x = tyz_sum_perc, y = cv_tsdlog)) + 
+#   geom_point(aes(fill = basin, size = nsites), shape = 21) + 
+#   scale_fill_brewer(palette = "Set2") +
+#   theme_bw() + theme(panel.grid = element_blank(), axis.text = element_text(color = "black")) +
+#   ylab("CV time series distance (log vals)") + xlab("Water availability (percentile)") +
+#   geom_smooth(method = "lm") +
+#   guides(fill = guide_legend(title = "Basin", override.aes = list(size = 5), order = 1), size = guide_legend(title = "Number of sites", order = 2)) +
+#   geom_abline(intercept = 0, slope = 0, linetype = "dashed")
+```
+
+Show simple linear model summary, weighted by number of sites
+```{r}
+summary(lm(cv_tsdlog ~ tyz_sum_perc, data = mydat, weights = nsites))
+```
+
+Show distribution of spatial streamflow heterogeneity by basin. Lots of structuring by basin, driven in large part by Staunton and Donner-Blitzen Rivers.
+```{r}
+par(mar = c(9,5,0.5,0.5))
+boxplot(cv_tsdlog ~ basin, data = mydat, ylab = "Spatial CV time series distance\n(log values)", xlab = "", las = 2, col = mycols)
+```
+
+
+Use a random slope/random intercept mixed effects model to estimate the among-basin mean effect of regional water availability on spatial streamflow heterogeneity.
+
+**Notes:**
+
+* This regression is not weighted by number of headwater sites used to calculate spatial heterogeneity because variance decomposition using *rptR* does not support use of weights.
+* This uses z-scored x-values...using the raw percentiles leads to model convergence issues
+
+```{r}
+mydat <- mydat %>% mutate(z_tyz_sum_perc = scale(tyz_sum_perc))
+lmod <- lmer(cv_tsdlog ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat)
+summary(lmod)
+```
+
+Get p-values for global slope and intercept: (doesn't to run in Quarto...works fine in R)
+```{r}
+coef(summary(as_lmerModLmerTest(lmod)))
+```
+
+
+Plot relationship between spatial streamflow heterogeneity and regional water availability with global (among-population mean) regression line. 
+```{r fig.width = 5, fig.height = 4}
+# get predicted values and 95% credible interval
+effects_tyz <- effects::effect(term = "z_tyz_sum_perc", mod = as_lmerModLmerTest(lmod), xlevels = list(z_tyz_sum_perc = seq(min(mydat$z_tyz_sum_perc), max(mydat$z_tyz_sum_perc), length.out = 1000)), se = list(level = 0.95))
+x_tyz <- as_tibble(effects_tyz) %>% mutate(tyz_sum_perc = (z_tyz_sum_perc * attr(mydat$z_tyz_sum_perc, "scaled:scale")) + attr(mydat$z_tyz_sum_perc, "scaled:center"))
+
+# trim data for panel labesl
+mydat_labs <- bind_rows(mydat %>% filter(basin == "West Brook", WaterYear %in% c(2020,2021)),
+                        mydat %>% filter(basin == "Snake River", WaterYear %in% c(2021,2022))) %>%
+  mutate(labs = c("b", "c", "d", "e"))
+
+# plot 
+randiffplot <- ggplot() + 
+  geom_ribbon(data = x_tyz, aes(x = tyz_sum_perc, ymin = lower, ymax = upper), fill = "grey80") +
+  geom_line(data = x_tyz, aes(x = tyz_sum_perc, y = fit), color = "black", size = 1.25, lineend = "round") +
+  geom_point(data = mydat, aes(x = tyz_sum_perc, y = cv_tsdlog, fill = basin, size = nsites), shape = 21) + 
+  scale_fill_brewer(palette = "Set2") +
+  geom_text(data = mydat_labs, aes(x = tyz_sum_perc, y = cv_tsdlog, label = labs), size = 3) +
+  theme_bw() + theme(panel.grid = element_blank(), axis.text = element_text(color = "black")) +
+  ylab("Spatial CV time series distance") + xlab("Water availability (percentile)") +
+  guides(fill = guide_legend(title = "Basin", override.aes = list(size = 5), order = 1), size = guide_legend(title = "Number of sites", order = 2)) +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  annotate("text", x = Inf, y = Inf, hjust = 1.1, vjust = 1.1, fontface = "italic",
+           label = paste("p = ", round(coef(summary(as_lmerModLmerTest(lmod)))[2,5], digits = 3)))
+randiffplot
+randiffplot2 <- randiffplot
+
+# write to file
+# jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/EcoD_RangeDiff_allsites2.jpg", width = 4.75, height = 5, units = "in", res = 1000)
+# randiffplot
+# dev.off()
+```
+
+Use *rptR* to decompose variance in spatial streamflow heterogeneity into fixed (regional water availability) and random (basin) effect sources:
+```{r message=FALSE}
+rmod <- rptGaussian(cv_tsdlog ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat, grname = c("basin", "Fixed"), ratio = TRUE, adjusted = FALSE, nboot = 1000)
+print(rmod)
+rmod$mod
+plot(rmod, grname = "basin")
+plot(rmod, grname = "Fixed")
+```
+
+The strong effect of basin is largely driven by Staunton and Donner-Blitzen Rivers. Without those basins, random effect variance shrinks and fixed effect variance expands considerably. Much of this pattern is likely due to low sample sizes (few headwater gages in these basins, particularly in the Donner-Blitzen)
+```{r message=FALSE}
+rmod <- rptGaussian(cv_tsdlog ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat %>% filter(!basin %in% c("Staunton River", "Donner-Blitzen River")), grname = c("basin", "Fixed"), ratio = TRUE, adjusted = FALSE, nboot = 1000)
+print(rmod)
+```
 
 
 ## Paper figs
@@ -1457,6 +1613,689 @@ print(p)
 # jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/EcoD_summermedianmap_Snake_annual.jpg", width = 4, height = 6, units = "in", res = 1000)
 # p
 # dev.off()
+```
+
+
+
+::: {.content-hidden}
+
+## Heterogeneity in flow metrics
+
+A couple of the reviewers wanted to see the heterogeneity analysis repeated for flow metrics. See below for the above analysis applied to metrics describing summer flow magnitude, rate of change, duration, and timing. None of the relationships with annual water available are significant at alpha = 0.05. Importantly, summarizing flow regime data into metrics obscures much of the important patterns of the data
+
+### Magnitude
+
+MAGNITUDE: effect of water availability on *spatial variation in median summer specific discharge* (spatial CV of median summer specific discharge by basin and year)
+
+Some data manipulation
+```{r eval=FALSE}
+# define basin-years to keep
+keepyears <- bind_rows(
+  tibble(basin = "West Brook", WaterYear = c(2020:2024)),
+  tibble(basin = "Paine Run", WaterYear = c(2019:2022)),
+  tibble(basin = "Staunton River", WaterYear = c(2019:2022)),
+  tibble(basin = "Flathead", WaterYear = c(2018:2024)),
+  tibble(basin = "Shields River", WaterYear = c(2016:2020,2022:2024)),
+  tibble(basin = "Snake River", WaterYear = c(2016:2024)),
+  tibble(basin = "Donner Blitzen", WaterYear = c(2016:2024)),
+) %>% mutate(keep = "yes")
+
+
+# calculate relative difference in range as above
+mydat <- dat_clean %>%
+  filter(Month %in% c(7:9)) %>%
+  group_by(basin, site_name, WaterYear) %>%
+  summarize(medyield = median(Yield_mm, na.rm = TRUE)) %>%
+  ungroup() %>%
+  left_join(dat_clean_big %>% 
+              filter(Month %in% c(7:9)) %>% 
+              group_by(basin, WaterYear) %>% 
+              summarize(medyield_big = median(Yield_mm, na.rm = TRUE)) %>%
+              ungroup()) %>%
+  mutate(medyield_scaled = medyield / medyield_big) %>%
+  group_by(basin, WaterYear) %>%
+  summarize(cvyield = sd(medyield)/mean(medyield), nsites = n()) %>%
+  ungroup() %>%
+  left_join(wateravail %>% select(basin, WaterYear, totalyield:tyz_sum_perc)) %>%
+  left_join(keepyears) %>% filter(keep == "yes") %>%
+  mutate(basin = ifelse(basin == "Shields River", "Yellowstone River",
+                        ifelse(basin == "Flathead", "Flathead River", 
+                               ifelse(basin == "Donner Blitzen", "Donner-Blitzen River", basin)))) %>%
+  mutate(basin = factor(basin, levels = c("West Brook", "Staunton River", "Paine Run", 
+                                          "Flathead River", "Yellowstone River", "Snake River", "Donner-Blitzen River"))) 
+
+mydat
+```
+
+Show simple linear model summary, weighted by number of sites
+```{r eval=FALSE}
+summary(lm(cvyield ~ tyz_sum_perc, data = mydat, weights = nsites))
+```
+
+Show distribution of spatial streamflow heterogeneity by basin. Lots of structuring by basin, driven in large part by Staunton and Donner-Blitzen Rivers.
+```{r eval=FALSE}
+par(mar = c(9,4,0.5,0.5))
+boxplot(cvyield ~ basin, data = mydat, ylab = "CV median summer streamflow", xlab = "", las = 2, col = mycols)
+```
+
+
+#### Fit model 
+
+Use a random slope/random intercept mixed effects model to estimate the among-basin mean effect of regional water availability on spatial streamflow heterogeneity.
+
+**Notes:**
+
+* This regression is not weighted by number of headwater sites used to calculate spatial heterogeneity because variance decomposition using *rptR* does not support use of weights.
+* This uses z-scored x-values...using the raw percentiles leads to model convergence issues
+
+```{r eval=FALSE}
+mydat <- mydat %>% mutate(z_tyz_sum_perc = scale(tyz_sum_perc))
+lmod <- lmer(cvyield ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat)
+summary(lmod)
+```
+
+Get p-values for global slope and intercept: (doesn't to run in Quarto...works fine in R)
+```{r eval=FALSE}
+coef(summary(as_lmerModLmerTest(lmod)))
+```
+
+
+Plot relationship between spatial streamflow heterogeneity and regional water availability with global (among-population mean) regression line. 
+```{r fig.width = 5, fig.height = 4, eval=FALSE}
+# get predicted values and 95% credible interval
+effects_tyz <- effects::effect(term = "z_tyz_sum_perc", mod = as_lmerModLmerTest(lmod), xlevels = list(z_tyz_sum_perc = seq(min(mydat$z_tyz_sum_perc), max(mydat$z_tyz_sum_perc), length.out = 1000)), se = list(level = 0.95))
+x_tyz <- as_tibble(effects_tyz) %>% mutate(tyz_sum_perc = (z_tyz_sum_perc * attr(mydat$z_tyz_sum_perc, "scaled:scale")) + attr(mydat$z_tyz_sum_perc, "scaled:center"))
+
+# trim data for panel labesl
+mydat_labs <- bind_rows(mydat %>% filter(basin == "West Brook", WaterYear %in% c(2020,2021)),
+                        mydat %>% filter(basin == "Snake River", WaterYear %in% c(2021,2022))) %>%
+  mutate(labs = c("b", "c", "d", "e"))
+
+# plot 
+randiffplot <- ggplot() + 
+  geom_ribbon(data = x_tyz, aes(x = tyz_sum_perc, ymin = lower, ymax = upper), fill = "grey80") +
+  geom_line(data = x_tyz, aes(x = tyz_sum_perc, y = fit), color = "black", size = 1.25, lineend = "round") +
+  geom_point(data = mydat, aes(x = tyz_sum_perc, y = cvyield, fill = basin, size = nsites), shape = 21) + 
+  scale_fill_brewer(palette = "Set2") +
+  geom_text(data = mydat_labs, aes(x = tyz_sum_perc, y = cvyield, label = labs), size = 3) +
+  theme_bw() + theme(panel.grid = element_blank(), axis.text = element_text(color = "black")) +
+  ylab("Spatial CV median summer streamflow") + xlab("Water availability (percentile)") +
+  guides(fill = guide_legend(title = "Basin", override.aes = list(size = 5), order = 1), size = guide_legend(title = "Number of sites", order = 2)) +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  annotate("text", x = Inf, y = Inf, hjust = 1.1, vjust = 1.1, fontface = "italic",
+           label = paste("p = ", round(coef(summary(as_lmerModLmerTest(lmod)))[2,5], digits = 3)))
+randiffplot
+randiffplot3 <- randiffplot
+
+# write to file
+# jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/EcoD_RangeDiff_allsites2.jpg", width = 4.75, height = 5, units = "in", res = 1000)
+# randiffplot
+# dev.off()
+```
+
+Use *rptR* to decompose variance in spatial streamflow heterogeneity into fixed (regional water availability) and random (basin) effect sources:
+```{r message=FALSE, eval=FALSE}
+rmod <- rptGaussian(cvyield ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat, grname = c("basin", "Fixed"), ratio = TRUE, adjusted = FALSE, nboot = 1000)
+print(rmod)
+rmod$mod
+plot(rmod, grname = "basin")
+plot(rmod, grname = "Fixed")
+```
+
+The strong effect of basin is largely driven by Staunton and Donner-Blitzen Rivers. Without those basins, random effect variance shrinks and fixed effect variance expands considerably. Much of this pattern is likely due to low sample sizes (few headwater gages in these basins, particularly in the Donner-Blitzen)
+```{r message=FALSE, eval=FALSE}
+rmod <- rptGaussian(cvyield ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat %>% filter(!basin %in% c("Staunton River", "Donner-Blitzen River")), grname = c("basin", "Fixed"), ratio = TRUE, adjusted = FALSE, nboot = 1000)
+print(rmod)
+```
+
+
+### Rate of change
+
+RATE OF CHANGE: effect of water availability on spatial variation in *Richard-Baker flashiness index* (spatial CV RBI by basin and year)
+
+Some data manipulation
+```{r eval=FALSE}
+# define basin-years to keep
+keepyears <- bind_rows(
+  tibble(basin = "West Brook", WaterYear = c(2020:2024)),
+  tibble(basin = "Paine Run", WaterYear = c(2019:2022)),
+  tibble(basin = "Staunton River", WaterYear = c(2019:2022)),
+  tibble(basin = "Flathead", WaterYear = c(2018:2024)),
+  tibble(basin = "Shields River", WaterYear = c(2016:2020,2022:2024)),
+  tibble(basin = "Snake River", WaterYear = c(2016:2024)),
+  tibble(basin = "Donner Blitzen", WaterYear = c(2016:2024)),
+) %>% mutate(keep = "yes")
+
+
+mydat <- dat_clean %>%
+  filter(Month %in% c(7:9)) %>%
+  group_by(basin, site_name, WaterYear) %>%
+  summarize(ar1c = acf(Yield_mm, lag.max = 1, plot = FALSE)$acf[2],
+            ar1c_log = acf(logYield, lag.max = 1, plot = FALSE)$acf[2],
+            rbi = sum(abs(Yield_mm - lag(Yield_mm)), na.rm = TRUE) / sum(Yield_mm, na.rm = TRUE)) %>%
+  ungroup() %>%
+  group_by(basin, WaterYear) %>%
+  summarize(cvar1c = sd(ar1c)/mean(ar1c), 
+            cvar1c_log = sd(ar1c_log)/mean(ar1c_log), 
+            cvrbi = sd(rbi)/mean(rbi),
+            nsites = n()) %>%
+  ungroup() %>%
+  left_join(wateravail %>% select(basin, WaterYear, totalyield:tyz_sum_perc)) %>%
+  left_join(keepyears) %>% filter(keep == "yes") %>%
+  mutate(basin = ifelse(basin == "Shields River", "Yellowstone River",
+                        ifelse(basin == "Flathead", "Flathead River", 
+                               ifelse(basin == "Donner Blitzen", "Donner-Blitzen River", basin)))) %>%
+  mutate(basin = factor(basin, levels = c("West Brook", "Staunton River", "Paine Run", 
+                                          "Flathead River", "Yellowstone River", "Snake River", "Donner-Blitzen River"))) 
+
+mydat
+
+ggpairs(dat_clean %>%
+  filter(Month %in% c(7:9)) %>%
+  group_by(basin, site_name, WaterYear) %>%
+  summarize(ar1c = acf(Yield_mm, lag.max = 1, plot = FALSE)$acf[2],
+            ar1c_log = acf(logYield, lag.max = 1, plot = FALSE)$acf[2],
+            rbi = sum(abs(Yield_mm - lag(Yield_mm)), na.rm = TRUE) / sum(Yield_mm, na.rm = TRUE)) %>%
+  ungroup() %>% select(ar1c, ar1c_log, rbi))
+```
+
+Show simple linear model summary, weighted by number of sites
+```{r eval=FALSE}
+summary(lm(cvrbi ~ tyz_sum_perc, data = mydat, weights = nsites))
+```
+
+Show distribution of spatial streamflow heterogeneity by basin. Lots of structuring by basin, driven in large part by Staunton and Donner-Blitzen Rivers.
+```{r eval=FALSE}
+par(mar = c(9,4,0.5,0.5))
+boxplot(cvrbi ~ basin, data = mydat, ylab = "CV Richard-Baker flashiness index", xlab = "", las = 2, col = mycols)
+```
+
+
+#### Fit model 
+
+Use a random slope/random intercept mixed effects model to estimate the among-basin mean effect of regional water availability on spatial streamflow heterogeneity.
+
+**Notes:**
+
+* This regression is not weighted by number of headwater sites used to calculate spatial heterogeneity because variance decomposition using *rptR* does not support use of weights.
+* This uses z-scored x-values...using the raw percentiles leads to model convergence issues
+
+```{r eval=FALSE}
+mydat <- mydat %>% mutate(z_tyz_sum_perc = scale(tyz_sum_perc))
+lmod <- lmer(cvrbi ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat)
+summary(lmod)
+```
+
+Get p-values for global slope and intercept: (doesn't to run in Quarto...works fine in R)
+```{r eval=FALSE}
+coef(summary(as_lmerModLmerTest(lmod)))
+```
+
+
+Plot relationship between spatial streamflow heterogeneity and regional water availability with global (among-population mean) regression line. 
+```{r fig.width = 5, fig.height = 4, eval=FALSE}
+# get predicted values and 95% credible interval
+effects_tyz <- effects::effect(term = "z_tyz_sum_perc", mod = as_lmerModLmerTest(lmod), xlevels = list(z_tyz_sum_perc = seq(min(mydat$z_tyz_sum_perc), max(mydat$z_tyz_sum_perc), length.out = 1000)), se = list(level = 0.95))
+x_tyz <- as_tibble(effects_tyz) %>% mutate(tyz_sum_perc = (z_tyz_sum_perc * attr(mydat$z_tyz_sum_perc, "scaled:scale")) + attr(mydat$z_tyz_sum_perc, "scaled:center"))
+
+# trim data for panel labesl
+mydat_labs <- bind_rows(mydat %>% filter(basin == "West Brook", WaterYear %in% c(2020,2021)),
+                        mydat %>% filter(basin == "Snake River", WaterYear %in% c(2021,2022))) %>%
+  mutate(labs = c("b", "c", "d", "e"))
+
+# plot 
+randiffplot <- ggplot() + 
+  geom_ribbon(data = x_tyz, aes(x = tyz_sum_perc, ymin = lower, ymax = upper), fill = "grey80") +
+  geom_line(data = x_tyz, aes(x = tyz_sum_perc, y = fit), color = "black", size = 1.25, lineend = "round") +
+  geom_point(data = mydat, aes(x = tyz_sum_perc, y = cvrbi, fill = basin, size = nsites), shape = 21) + 
+  scale_fill_brewer(palette = "Set2") +
+  geom_text(data = mydat_labs, aes(x = tyz_sum_perc, y = cvrbi, label = labs), size = 3) +
+  theme_bw() + theme(panel.grid = element_blank(), axis.text = element_text(color = "black")) +
+  ylab("Spatial CV Richard-Baker flashiness index") + xlab("Water availability (percentile)") +
+  guides(fill = guide_legend(title = "Basin", override.aes = list(size = 5), order = 1), size = guide_legend(title = "Number of sites", order = 2)) +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  annotate("text", x = Inf, y = Inf, hjust = 1.1, vjust = 1.1, fontface = "italic",
+           label = paste("p = ", round(coef(summary(as_lmerModLmerTest(lmod)))[2,5], digits = 3)))
+randiffplot
+randiffplot4 <- randiffplot
+
+# write to file
+# jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/EcoD_RangeDiff_allsites2.jpg", width = 4.75, height = 5, units = "in", res = 1000)
+# randiffplot
+# dev.off()
+```
+
+Use *rptR* to decompose variance in spatial streamflow heterogeneity into fixed (regional water availability) and random (basin) effect sources:
+```{r message=FALSE, eval=FALSE}
+rmod <- rptGaussian(cvyield ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat, grname = c("basin", "Fixed"), ratio = TRUE, adjusted = FALSE, nboot = 1000)
+print(rmod)
+rmod$mod
+plot(rmod, grname = "basin")
+plot(rmod, grname = "Fixed")
+```
+
+The strong effect of basin is largely driven by Staunton and Donner-Blitzen Rivers. Without those basins, random effect variance shrinks and fixed effect variance expands considerably. Much of this pattern is likely due to low sample sizes (few headwater gages in these basins, particularly in the Donner-Blitzen)
+```{r message=FALSE, eval=FALSE}
+rmod <- rptGaussian(cvyield ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat %>% filter(!basin %in% c("Staunton River", "Donner-Blitzen River")), grname = c("basin", "Fixed"), ratio = TRUE, adjusted = FALSE, nboot = 1000)
+print(rmod)
+```
+
+
+
+### Duration
+
+Duration: effect of water availability on spatial variation in *autoregressive lag-one (AR1) correlation* (spatial CV site and year specific AR1 by basin and year)
+
+Some data manipulation
+```{r eval=FALSE}
+# define basin-years to keep
+keepyears <- bind_rows(
+  tibble(basin = "West Brook", WaterYear = c(2020:2024)),
+  tibble(basin = "Paine Run", WaterYear = c(2019:2022)),
+  tibble(basin = "Staunton River", WaterYear = c(2019:2022)),
+  tibble(basin = "Flathead", WaterYear = c(2018:2024)),
+  tibble(basin = "Shields River", WaterYear = c(2016:2020,2022:2024)),
+  tibble(basin = "Snake River", WaterYear = c(2016:2024)),
+  tibble(basin = "Donner Blitzen", WaterYear = c(2016:2024)),
+) %>% mutate(keep = "yes")
+
+# 
+# p1 <- plot_flow_duration(dat_clean %>% filter(Month %in% c(7:9), site_name == "Avery Brook"),
+#                    dates = date, values = Yield_mm, custom_months = c(7:9))
+# calc_longterm_daily_stats(dat_clean %>% filter(Month %in% c(7:9), site_name == "Avery Brook"),
+#                           dates = date, values = Yield_mm)
+# 
+# calc_flow_percentile(dat_clean %>% filter(Month %in% c(7:9), site_name == "Avery Brook"),
+#                           dates = date, values = Yield_mm)
+
+calc_longterm_percentile(dat_clean %>% filter(Month %in% c(7:9), site_name == "Avery Brook"),
+                          dates = date, values = Yield_mm, months = c(7:9), percentiles = c(10,50,90))
+
+mydat <- dat_clean %>%
+  filter(Month %in% c(7:9)) %>%
+  group_by(basin, site_name, WaterYear) %>%
+  group_modify( ~ calc_longterm_percentile(.x, dates = date, values = Yield_mm, months = c(7:9), percentiles = c(10,50,90))) %>%
+  ungroup() %>%
+  group_by(basin, WaterYear) %>%
+  summarize(cvP10 = sd(P10)/mean(P10), 
+            cvP50 = sd(P50)/mean(P50), 
+            cvP90 = sd(P90)/mean(P90),
+            nsites = n()) %>%
+  ungroup() %>%
+  left_join(wateravail %>% select(basin, WaterYear, totalyield:tyz_sum_perc)) %>%
+  left_join(keepyears) %>% filter(keep == "yes") %>%
+  mutate(basin = ifelse(basin == "Shields River", "Yellowstone River",
+                        ifelse(basin == "Flathead", "Flathead River", 
+                               ifelse(basin == "Donner Blitzen", "Donner-Blitzen River", basin)))) %>%
+  mutate(basin = factor(basin, levels = c("West Brook", "Staunton River", "Paine Run", 
+                                          "Flathead River", "Yellowstone River", "Snake River", "Donner-Blitzen River"))) 
+
+mydat
+
+```
+
+#### 10th percentile
+
+Show simple linear model summary, weighted by number of sites
+```{r eval=FALSE}
+summary(lm(cvP10 ~ tyz_sum_perc, data = mydat, weights = nsites))
+```
+
+Show distribution of spatial streamflow heterogeneity by basin. Lots of structuring by basin, driven in large part by Staunton and Donner-Blitzen Rivers.
+```{r eval=FALSE}
+par(mar = c(9,4,0.5,0.5))
+boxplot(cvP10 ~ basin, data = mydat, ylab = "CV 10th percentile", xlab = "", las = 2, col = mycols)
+```
+
+
+##### Fit model 
+
+Use a random slope/random intercept mixed effects model to estimate the among-basin mean effect of regional water availability on spatial streamflow heterogeneity.
+
+**Notes:**
+
+* This regression is not weighted by number of headwater sites used to calculate spatial heterogeneity because variance decomposition using *rptR* does not support use of weights.
+* This uses z-scored x-values...using the raw percentiles leads to model convergence issues
+
+```{r eval=FALSE}
+mydat <- mydat %>% mutate(z_tyz_sum_perc = scale(tyz_sum_perc))
+lmod <- lmer(cvP10 ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat)
+summary(lmod)
+```
+
+Get p-values for global slope and intercept: (doesn't to run in Quarto...works fine in R)
+```{r eval=FALSE}
+coef(summary(as_lmerModLmerTest(lmod)))
+```
+
+
+Plot relationship between spatial streamflow heterogeneity and regional water availability with global (among-population mean) regression line. 
+```{r fig.width = 5, fig.height = 4, eval=FALSE}
+# get predicted values and 95% credible interval
+effects_tyz <- effects::effect(term = "z_tyz_sum_perc", mod = as_lmerModLmerTest(lmod), xlevels = list(z_tyz_sum_perc = seq(min(mydat$z_tyz_sum_perc), max(mydat$z_tyz_sum_perc), length.out = 1000)), se = list(level = 0.95))
+x_tyz <- as_tibble(effects_tyz) %>% mutate(tyz_sum_perc = (z_tyz_sum_perc * attr(mydat$z_tyz_sum_perc, "scaled:scale")) + attr(mydat$z_tyz_sum_perc, "scaled:center"))
+
+# trim data for panel labesl
+mydat_labs <- bind_rows(mydat %>% filter(basin == "West Brook", WaterYear %in% c(2020,2021)),
+                        mydat %>% filter(basin == "Snake River", WaterYear %in% c(2021,2022))) %>%
+  mutate(labs = c("b", "c", "d", "e"))
+
+# plot 
+randiffplot <- ggplot() + 
+  geom_ribbon(data = x_tyz, aes(x = tyz_sum_perc, ymin = lower, ymax = upper), fill = "grey80") +
+  geom_line(data = x_tyz, aes(x = tyz_sum_perc, y = fit), color = "black", size = 1.25, lineend = "round") +
+  geom_point(data = mydat, aes(x = tyz_sum_perc, y = cvP10, fill = basin, size = nsites), shape = 21) + 
+  scale_fill_brewer(palette = "Set2") +
+  geom_text(data = mydat_labs, aes(x = tyz_sum_perc, y = cvP10, label = labs), size = 3) +
+  theme_bw() + theme(panel.grid = element_blank(), axis.text = element_text(color = "black")) +
+  ylab(expression(paste("Spatial CV ", 10^th, " percentile streamflow"))) + xlab("Water availability (percentile)") +
+  guides(fill = guide_legend(title = "Basin", override.aes = list(size = 5), order = 1), size = guide_legend(title = "Number of sites", order = 2)) +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  annotate("text", x = Inf, y = Inf, hjust = 1.1, vjust = 1.1, fontface = "italic",
+           label = paste("p = ", round(coef(summary(as_lmerModLmerTest(lmod)))[2,5], digits = 3)))
+randiffplot
+randiffplot5 <- randiffplot
+
+# write to file
+# jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/EcoD_RangeDiff_allsites2.jpg", width = 4.75, height = 5, units = "in", res = 1000)
+# randiffplot
+# dev.off()
+```
+
+#### 50th percentile
+
+Show simple linear model summary, weighted by number of sites
+```{r eval=FALSE}
+summary(lm(cvP50 ~ tyz_sum_perc, data = mydat, weights = nsites))
+```
+
+Show distribution of spatial streamflow heterogeneity by basin. Lots of structuring by basin, driven in large part by Staunton and Donner-Blitzen Rivers.
+```{r eval=FALSE}
+par(mar = c(9,4,0.5,0.5))
+boxplot(cvP50 ~ basin, data = mydat, ylab = "Spatial CV 50th percentile", xlab = "", las = 2, col = mycols)
+```
+
+
+##### Fit model 
+
+Use a random slope/random intercept mixed effects model to estimate the among-basin mean effect of regional water availability on spatial streamflow heterogeneity.
+
+**Notes:**
+
+* This regression is not weighted by number of headwater sites used to calculate spatial heterogeneity because variance decomposition using *rptR* does not support use of weights.
+* This uses z-scored x-values...using the raw percentiles leads to model convergence issues
+
+```{r eval=FALSE}
+mydat <- mydat %>% mutate(z_tyz_sum_perc = scale(tyz_sum_perc))
+lmod <- lmer(cvP50 ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat)
+summary(lmod)
+```
+
+Get p-values for global slope and intercept: (doesn't to run in Quarto...works fine in R)
+```{r eval=FALSE}
+coef(summary(as_lmerModLmerTest(lmod)))
+```
+
+
+Plot relationship between spatial streamflow heterogeneity and regional water availability with global (among-population mean) regression line. 
+```{r fig.width = 5, fig.height = 4, eval=FALSE}
+# get predicted values and 95% credible interval
+effects_tyz <- effects::effect(term = "z_tyz_sum_perc", mod = as_lmerModLmerTest(lmod), xlevels = list(z_tyz_sum_perc = seq(min(mydat$z_tyz_sum_perc), max(mydat$z_tyz_sum_perc), length.out = 1000)), se = list(level = 0.95))
+x_tyz <- as_tibble(effects_tyz) %>% mutate(tyz_sum_perc = (z_tyz_sum_perc * attr(mydat$z_tyz_sum_perc, "scaled:scale")) + attr(mydat$z_tyz_sum_perc, "scaled:center"))
+
+# trim data for panel labesl
+mydat_labs <- bind_rows(mydat %>% filter(basin == "West Brook", WaterYear %in% c(2020,2021)),
+                        mydat %>% filter(basin == "Snake River", WaterYear %in% c(2021,2022))) %>%
+  mutate(labs = c("b", "c", "d", "e"))
+
+# plot 
+randiffplot <- ggplot() + 
+  geom_ribbon(data = x_tyz, aes(x = tyz_sum_perc, ymin = lower, ymax = upper), fill = "grey80") +
+  geom_line(data = x_tyz, aes(x = tyz_sum_perc, y = fit), color = "black", size = 1.25, lineend = "round") +
+  geom_point(data = mydat, aes(x = tyz_sum_perc, y = cvP50, fill = basin, size = nsites), shape = 21) + 
+  scale_fill_brewer(palette = "Set2") +
+  geom_text(data = mydat_labs, aes(x = tyz_sum_perc, y = cvP50, label = labs), size = 3) +
+  theme_bw() + theme(panel.grid = element_blank(), axis.text = element_text(color = "black")) +
+  ylab(expression(paste("Spatial CV ", 50^th, " percentile streamflow"))) + xlab("Water availability (percentile)") +
+  guides(fill = guide_legend(title = "Basin", override.aes = list(size = 5), order = 1), size = guide_legend(title = "Number of sites", order = 2)) +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  annotate("text", x = Inf, y = Inf, hjust = 1.1, vjust = 1.1, fontface = "italic",
+           label = paste("p = ", round(coef(summary(as_lmerModLmerTest(lmod)))[2,5], digits = 3)))
+randiffplot
+randiffplot6 <- randiffplot
+
+# write to file
+# jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/EcoD_RangeDiff_allsites2.jpg", width = 4.75, height = 5, units = "in", res = 1000)
+# randiffplot
+# dev.off()
+```
+
+#### 90th percentile
+
+Show simple linear model summary, weighted by number of sites
+```{r eval=FALSE}
+summary(lm(cvP90 ~ tyz_sum_perc, data = mydat, weights = nsites))
+```
+
+Show distribution of spatial streamflow heterogeneity by basin. Lots of structuring by basin, driven in large part by Staunton and Donner-Blitzen Rivers.
+```{r eval=FALSE}
+par(mar = c(9,4,0.5,0.5))
+boxplot(cvP90 ~ basin, data = mydat, ylab = "Spatial CV 90th percentile", xlab = "", las = 2, col = mycols)
+```
+
+
+##### Fit model 
+
+Use a random slope/random intercept mixed effects model to estimate the among-basin mean effect of regional water availability on spatial streamflow heterogeneity.
+
+**Notes:**
+
+* This regression is not weighted by number of headwater sites used to calculate spatial heterogeneity because variance decomposition using *rptR* does not support use of weights.
+* This uses z-scored x-values...using the raw percentiles leads to model convergence issues
+
+```{r eval=FALSE}
+mydat <- mydat %>% mutate(z_tyz_sum_perc = scale(tyz_sum_perc))
+lmod <- lmer(cvP90 ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat)
+summary(lmod)
+```
+
+Get p-values for global slope and intercept: (doesn't to run in Quarto...works fine in R)
+```{r eval=FALSE}
+coef(summary(as_lmerModLmerTest(lmod)))
+```
+
+
+Plot relationship between spatial streamflow heterogeneity and regional water availability with global (among-population mean) regression line. 
+```{r fig.width = 5, fig.height = 4, eval=FALSE}
+# get predicted values and 95% credible interval
+effects_tyz <- effects::effect(term = "z_tyz_sum_perc", mod = as_lmerModLmerTest(lmod), xlevels = list(z_tyz_sum_perc = seq(min(mydat$z_tyz_sum_perc), max(mydat$z_tyz_sum_perc), length.out = 1000)), se = list(level = 0.95))
+x_tyz <- as_tibble(effects_tyz) %>% mutate(tyz_sum_perc = (z_tyz_sum_perc * attr(mydat$z_tyz_sum_perc, "scaled:scale")) + attr(mydat$z_tyz_sum_perc, "scaled:center"))
+
+# trim data for panel labesl
+mydat_labs <- bind_rows(mydat %>% filter(basin == "West Brook", WaterYear %in% c(2020,2021)),
+                        mydat %>% filter(basin == "Snake River", WaterYear %in% c(2021,2022))) %>%
+  mutate(labs = c("b", "c", "d", "e"))
+
+# plot 
+randiffplot <- ggplot() + 
+  geom_ribbon(data = x_tyz, aes(x = tyz_sum_perc, ymin = lower, ymax = upper), fill = "grey80") +
+  geom_line(data = x_tyz, aes(x = tyz_sum_perc, y = fit), color = "black", size = 1.25, lineend = "round") +
+  geom_point(data = mydat, aes(x = tyz_sum_perc, y = cvP90, fill = basin, size = nsites), shape = 21) + 
+  scale_fill_brewer(palette = "Set2") +
+  geom_text(data = mydat_labs, aes(x = tyz_sum_perc, y = cvP90, label = labs), size = 3) +
+  theme_bw() + theme(panel.grid = element_blank(), axis.text = element_text(color = "black")) +
+  ylab(expression(paste("Spatial CV ", 90^th, " percentile streamflow"))) + xlab("Water availability (percentile)") +
+  guides(fill = guide_legend(title = "Basin", override.aes = list(size = 5), order = 1), size = guide_legend(title = "Number of sites", order = 2)) +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  annotate("text", x = Inf, y = Inf, hjust = 1.1, vjust = 1.1, fontface = "italic",
+           label = paste("p = ", round(coef(summary(as_lmerModLmerTest(lmod)))[2,5], digits = 3)))
+randiffplot
+randiffplot7 <- randiffplot
+
+# write to file
+# jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/EcoD_RangeDiff_allsites2.jpg", width = 4.75, height = 5, units = "in", res = 1000)
+# randiffplot
+# dev.off()
+```
+
+### Timing
+
+TIMING:
+Some data manipulation
+```{r eval=FALSE}
+# define basin-years to keep
+keepyears <- bind_rows(
+  tibble(basin = "West Brook", WaterYear = c(2020:2024)),
+  tibble(basin = "Paine Run", WaterYear = c(2019:2022)),
+  tibble(basin = "Staunton River", WaterYear = c(2019:2022)),
+  tibble(basin = "Flathead", WaterYear = c(2018:2024)),
+  tibble(basin = "Shields River", WaterYear = c(2016:2020,2022:2024)),
+  tibble(basin = "Snake River", WaterYear = c(2016:2024)),
+  tibble(basin = "Donner Blitzen", WaterYear = c(2016:2024)),
+) %>% mutate(keep = "yes")
+
+
+
+mybas <- dat_clean %>% group_by(basin, site_name) %>% summarize(n = n()) %>% ungroup() %>% select(-n)
+annstats <- calc_annual_stats(data = dat_clean %>% filter(Month %in% c(7:9)),
+                  dates = date, values = Yield_mm, groups = site_name, months = c(7:9), ignore_missing = TRUE)
+annlows <- calc_annual_lowflows(data = dat_clean %>% filter(Month %in% c(7:9)),
+                  dates = date, values = Yield_mm, groups = site_name, months = c(7:9), ignore_missing = TRUE)
+mydat <- annstats %>% left_join(annlows) %>% left_join(mybas) %>%
+  mutate(WaterYear = Year) %>%
+  select(basin, site_name, WaterYear, Mean, Median, P10, Min_7_Day, Min_7_Day_DoY) %>%
+  group_by(basin, WaterYear) %>%
+  summarize(cv_Mean = sd(Mean, na.rm = TRUE) / mean(Mean, na.rm = TRUE), 
+            cv_Median = sd(Median, na.rm = TRUE) / mean(Median, na.rm = TRUE), 
+            cv_P10 = sd(P10, na.rm = TRUE) / mean(P10, na.rm = TRUE), 
+            cv_Min_7_Day = sd(Min_7_Day, na.rm = TRUE) / mean(Min_7_Day, na.rm = TRUE), 
+            cv_Min_7_Day_DoY = sd(Min_7_Day_DoY, na.rm = TRUE) / mean(Min_7_Day_DoY, na.rm = TRUE),
+            nsites = n()) %>%
+  ungroup() %>%
+  left_join(wateravail %>% select(basin, WaterYear, totalyield:tyz_sum_perc)) %>%
+  left_join(keepyears) %>% filter(keep == "yes") %>%
+  mutate(basin = ifelse(basin == "Shields River", "Yellowstone River",
+                        ifelse(basin == "Flathead", "Flathead River", 
+                               ifelse(basin == "Donner Blitzen", "Donner-Blitzen River", basin)))) %>%
+  mutate(basin = factor(basin, levels = c("West Brook", "Staunton River", "Paine Run", 
+                                          "Flathead River", "Yellowstone River", "Snake River", "Donner-Blitzen River"))) 
+ 
+ 
+# # calculate relative difference in range as above
+# thresh <- dat_clean %>%
+#   filter(Month %in% c(7:9)) %>%
+#   group_by(basin, site_name) %>%
+#   group_modify( ~ calc_longterm_percentile(.x, dates = date, values = Yield_mm, months = c(7:9), percentiles = c(5,10,50))) %>%
+#   ungroup()
+# 
+mydat <- dat_clean %>%
+  filter(Month %in% c(7:9)) %>%
+  left_join(thresh) %>%
+  group_by(basin, site_name, WaterYear) %>%
+  summarize(skewness = moments::skewness(logYield, na.rm = TRUE),
+            kurtosis = moments::kurtosis(logYield, na.rm = TRUE)) %>%
+  group_by(basin, WaterYear) %>%
+  summarize(cv_skew = sd(skewness) / mean(skewness),
+            cv_kurt = sd(kurtosis) / mean(kurtosis),
+            nsites = n()) %>%
+  ungroup() %>%
+  left_join(wateravail %>% select(basin, WaterYear, totalyield:tyz_sum_perc)) %>%
+  left_join(keepyears) %>% filter(keep == "yes") %>%
+  mutate(basin = ifelse(basin == "Shields River", "Yellowstone River",
+                        ifelse(basin == "Flathead", "Flathead River",
+                               ifelse(basin == "Donner Blitzen", "Donner-Blitzen River", basin)))) %>%
+  mutate(basin = factor(basin, levels = c("West Brook", "Staunton River", "Paine Run",
+                                          "Flathead River", "Yellowstone River", "Snake River", "Donner-Blitzen River")))
+
+mydat
+```
+
+Show simple linear model summary, weighted by number of sites
+```{r eval=FALSE}
+summary(lm(cv_skew ~ tyz_sum_perc, data = mydat, weights = nsites))
+summary(lm(cv_kurt ~ tyz_sum_perc, data = mydat, weights = nsites))
+
+```
+
+Show distribution of spatial streamflow heterogeneity by basin. Lots of structuring by basin, driven in large part by Staunton and Donner-Blitzen Rivers.
+```{r eval=FALSE}
+par(mar = c(9,4,0.5,0.5))
+boxplot(cv_skew ~ basin, data = mydat, ylab = "CV days below site-level 50th percentile", xlab = "", las = 2, col = mycols)
+```
+
+
+#### Fit model 
+
+Use a random slope/random intercept mixed effects model to estimate the among-basin mean effect of regional water availability on spatial streamflow heterogeneity.
+
+**Notes:**
+
+* This regression is not weighted by number of headwater sites used to calculate spatial heterogeneity because variance decomposition using *rptR* does not support use of weights.
+* This uses z-scored x-values...using the raw percentiles leads to model convergence issues
+
+```{r eval=FALSE}
+mydat <- mydat %>% mutate(z_tyz_sum_perc = scale(tyz_sum_perc))
+lmod <- lmer(cv_kurt ~ z_tyz_sum_perc + (1 + z_tyz_sum_perc | basin), data = mydat)
+summary(lmod)
+```
+
+Get p-values for global slope and intercept: (doesn't to run in Quarto...works fine in R)
+```{r eval=FALSE}
+coef(summary(as_lmerModLmerTest(lmod)))
+```
+
+
+Plot relationship between spatial streamflow heterogeneity and regional water availability with global (among-population mean) regression line. 
+```{r fig.width = 5, fig.height = 4, eval=FALSE}
+# get predicted values and 95% credible interval
+effects_tyz <- effects::effect(term = "z_tyz_sum_perc", mod = as_lmerModLmerTest(lmod), xlevels = list(z_tyz_sum_perc = seq(min(mydat$z_tyz_sum_perc), max(mydat$z_tyz_sum_perc), length.out = 1000)), se = list(level = 0.95))
+x_tyz <- as_tibble(effects_tyz) %>% mutate(tyz_sum_perc = (z_tyz_sum_perc * attr(mydat$z_tyz_sum_perc, "scaled:scale")) + attr(mydat$z_tyz_sum_perc, "scaled:center"))
+
+# trim data for panel labesl
+mydat_labs <- bind_rows(mydat %>% filter(basin == "West Brook", WaterYear %in% c(2020,2021)),
+                        mydat %>% filter(basin == "Snake River", WaterYear %in% c(2021,2022))) %>%
+  mutate(labs = c("b", "c", "d", "e"))
+
+# plot 
+randiffplot <- ggplot() + 
+  geom_ribbon(data = x_tyz, aes(x = tyz_sum_perc, ymin = lower, ymax = upper), fill = "grey80") +
+  geom_line(data = x_tyz, aes(x = tyz_sum_perc, y = fit), color = "black", size = 1.25, lineend = "round") +
+  geom_point(data = mydat, aes(x = tyz_sum_perc, y = cv_skew, fill = basin, size = nsites), shape = 21) + 
+  scale_fill_brewer(palette = "Set2") +
+  geom_text(data = mydat_labs, aes(x = tyz_sum_perc, y = cv_skew, label = labs), size = 3) +
+  theme_bw() + theme(panel.grid = element_blank(), axis.text = element_text(color = "black")) +
+  ylab("Spatial CV median summer streamflow") + xlab("Water availability (percentile)") +
+  guides(fill = guide_legend(title = "Basin", override.aes = list(size = 5), order = 1), size = guide_legend(title = "Number of sites", order = 2)) +
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
+  annotate("text", x = Inf, y = Inf, hjust = 1.1, vjust = 1.1, fontface = "italic",
+           label = paste("p = ", round(coef(summary(as_lmerModLmerTest(lmod)))[2,5], digits = 3)))
+randiffplot + ylim(0,2.5)
+# randiffplot3 <- randiffplot
+
+# write to file
+# jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/EcoD_RangeDiff_allsites2.jpg", width = 4.75, height = 5, units = "in", res = 1000)
+# randiffplot
+# dev.off()
+```
+
+
+### Combined figs
+
+```{r fig.width=8, fig.height=8, eval=FALSE}
+bp1 <- egg::ggarrange(randiffplot1 + theme(legend.position = "none", axis.title.x = element_blank()), 
+                      randiffplot2 + theme(axis.title.x = element_blank()), ncol = 2)
+
+bp2 <- egg::ggarrange(randiffplot3 + theme(legend.position = "none", axis.title.x = element_blank()), 
+                      randiffplot4 + theme(legend.position = "none", axis.title.x = element_blank()), 
+                      randiffplot5 + theme(legend.position = "none", axis.title.x = element_blank()), 
+                      randiffplot7 + theme(legend.position = "none", axis.title.x = element_blank()), 
+                      nrow = 1, bottom = "Annual water availability (percentile)")
+
+ggarrange(bp1, bp2, nrow = 2)
+
+jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/EcoD_FlowMetricsByWaterAvail.jpg", width = 8, height = 8, units = "in", res = 1000)
+ggarrange(bp1, bp2, nrow = 2)
+dev.off()
 ```
 
 
