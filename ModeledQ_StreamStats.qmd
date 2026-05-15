@@ -253,9 +253,9 @@ for (i in 1:length(sites)) {
     left_join(p %>%
                 select(site_name, exceedance, logYield) %>%
                 rename(logYield_ss = logYield)) %>%
-    mutate(error_abs = logYield_ss - logYield,
-           error_abs_real = exp(logYield_ss) - exp(logYield),
-           error_rel = (exp(logYield_ss) - exp(logYield)) / exp(logYield))
+    mutate(error_abs = logYield - logYield_ss,
+           error_abs_real = exp(logYield) - exp(logYield_ss),
+           error_rel = (exp(logYield) - exp(logYield_ss)) / exp(logYield_ss))
   joined[[i]] <- j %>% filter(!is.na(error_abs))
   joined_full[[i]] <- j
 }
@@ -272,6 +272,14 @@ joined_mean <- joined %>% group_by(exceedance) %>% summarize(error_abs = mean(er
 # calculate among size variation for StreamStats and observed exceedance 
 vardat_ss <- joined %>% group_by(exceedance) %>% summarize(exdsd = sd(logYield_ss))
 vardat_obs <- joined_full %>% group_by(exceedance) %>% summarize(exdsd = sd(logYield))
+
+vardat_ss2 <- joined %>% 
+  group_by(exceedance) %>% 
+  summarize(cv_exd_ss = sd(exp(logYield_ss)) / mean(exp(logYield_ss)),
+            cv_exd_obs = sd(exp(logYield)) / mean(exp(logYield))) %>%
+  ungroup() %>%
+  mutate(relerror = ((cv_exd_obs - cv_exd_ss) / cv_exd_ss)*100)
+
 
 # tibble for site labels
 siteslabs <- tibble(site_name = factor(sites, levels = sites), site_lab = c("WB0", "Mitchell", "Obear Lower", "WB Upper", "Sanderson", "Avery"))
@@ -301,7 +309,7 @@ p2 <- ggplot(data = joined) +
   geom_abline(intercept = 0, slope = 0, linetype = "dashed") +
   geom_line(data = joined_mean, aes(x = exceedance, y = error_abs), size = 1) +
   scale_color_manual(values = mypal) +
-  xlab("Exceedance probability") + ylab("Error (modeled - observed)") + ylim(-2.1,0) +
+  xlab("Exceedance probability") + ylab("Error (observed - modeled)") + #ylim(0,2.1) +
   theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
                      legend.position = "none", axis.text = element_text(color = "black"))
 # combine
@@ -311,6 +319,35 @@ annotate_figure(ggarrange(p1, p2, ncol = 2, labels = "auto"), top = text_grob("T
 
 Does StreamStats misrepresent among-site variation in flow duration?
 ```{r}
+p1 <- vardat_ss2 %>% 
+  gather(cv_exd_obs:cv_exd_ss, key = "type", value = "cv") %>%
+  ggplot() +
+  geom_smooth(aes(x = exceedance, y = cv, color = type)) + 
+  scale_color_manual(values = c("cv_exd_obs" = "black", "cv_exd_ss" = "#00B834"),
+                     labels = c("cv_exd_obs" = "Observed", "cv_exd_ss" = "USGS StreamStats")) +
+  geom_point(aes(x = exceedance, y = cv, fill = type), shape = 21) +
+  scale_fill_manual(values = c("cv_exd_obs" = "white", "cv_exd_ss" = "#00B834"),
+                     labels = c("cv_exd_obs" = "Observed", "cv_exd_ss" = "USGS StreamStats")) +
+  xlab("Exceedance probability") + ylab("Spatial CV") +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), 
+                     legend.position = "inside", legend.position.inside = c(0.35,0.9), legend.title = element_blank())
+
+p2 <- ggplot(data = vardat_ss2, aes(x = exceedance, y = cv_exd_obs - cv_exd_ss)) +
+  geom_smooth(color = "black") + 
+  geom_point(shape = 21, fill = "white") + 
+  geom_abline(slope = 0, intercept = 0, linetype = "dashed", color = "grey50") +
+  xlab("Exceedance probability") + ylab("Abs. error in spatial CV (Obs - SS)") +
+  theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+
+annotate_figure(ggarrange(p1, p2, ncol = 2, labels = "auto"), top = text_grob("The West Brook, Massachusetts"))
+
+jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/StreamStats_WestBrook_SpatialCVError.jpg", width = 6, height = 4, units = "in", res = 1000)
+annotate_figure(ggarrange(p1, p2, ncol = 2, labels = "auto"), top = text_grob("The West Brook, Massachusetts"))
+dev.off()
+```
+
+```{r eval=FALSE, include=FALSE}
 p1 <- ggplot() +
   geom_line(data = vardat_obs, aes(x = exceedance, y = exdsd), size = 1, color = "grey60") +
   geom_line(data = vardat_ss, aes(x = exceedance, y = exdsd), color = "black") + 
@@ -330,6 +367,7 @@ p2 <- vardat_obs %>%
 
 annotate_figure(ggarrange(p1, p2, ncol = 2, labels = "auto"), top = text_grob("The West Brook, Massachusetts"))
 ```
+
 
 Write to file
 ```{r, results='hide', eval=FALSE}
