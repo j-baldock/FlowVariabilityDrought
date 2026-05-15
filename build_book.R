@@ -24,7 +24,7 @@ quarto::quarto_render("SpaceTimeVar.qmd",
                       output_format = "html")
 
 quarto::quarto_render("VarByClimate.qmd", 
-                      #cache_refresh = TRUE, # default is FALSE
+                      cache_refresh = TRUE, # default is FALSE
                       output_format = "html")
 
 quarto::quarto_render("ReferenceLowFlow.qmd", 
