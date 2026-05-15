@@ -72,6 +72,8 @@ focalsites <- siteinfo_sp %>%
   mutate(designation = ifelse(designation == "big", "big", "little"))
 ```
 
+
+
 ```{r include=FALSE, eval=FALSE}
 # write individual shapefiles for each basin
 
@@ -155,6 +157,88 @@ st_write(focalsites %>%
 
 ```
 
+
+## Supplementary table
+
+Get US EPA Ecoregion spatial data: <https://www.epa.gov/eco-research/ecoregions-north-america>
+```{r cache=FALSE}
+# level 1
+eco1 <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Data/Spatial data/Ecoregions/na_cec_eco_l1/NA_CEC_Eco_Level1.shp")
+eco1 <- st_transform(eco1, crs(siteinfo_sp))
+# level 2
+eco2 <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Data/Spatial data/Ecoregions/na_cec_eco_l2/NA_CEC_Eco_Level2.shp")
+eco2 <- st_transform(eco2, crs(siteinfo_sp))
+# level 3
+eco3 <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Data/Spatial data/Ecoregions/na_cec_eco_l3/NA_CEC_Eco_Level3.shp")
+eco3 <- st_transform(eco3, crs(siteinfo_sp))
+
+# extract point data
+sf::sf_use_s2(FALSE)
+focalsites_eco1 <- st_join(focalsites, eco1, join = st_intersects)
+focalsites_eco2 <- st_join(focalsites, eco2, join = st_intersects)
+focalsites_eco3 <- st_join(focalsites, eco3, join = st_intersects)
+
+# combine into tibble
+focalsites_eco <- as_tibble(focalsites_eco1 %>% select(site_name, NA_L1NAME)) %>%
+  left_join(as_tibble(focalsites_eco2 %>% select(site_name, NA_L2NAME))) %>%
+  left_join(as_tibble(focalsites_eco3 %>% select(site_name, NA_L3NAME))) %>%
+  select(site_name, NA_L1NAME, NA_L2NAME, NA_L3NAME)
+
+head(focalsites_eco)
+```
+
+
+Get USGS National Geologic Map data: <https://ngmdb.usgs.gov/ngmdb/ngmdb_home.html>
+```{r cache=FALSE}
+# map unit spatial data
+geology <- st_read("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Data/Spatial data/Geology/USGS_DR-1210_GeMS.3436/NGMDB_GeMS_3436/GeMS_shapefiles/MapUnitPolys.shp")
+geology <- st_transform(geology, crs(siteinfo_sp))
+
+# load map unit descriptions
+mapunits <- read_csv("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Data/Spatial data/Geology/USGS_DR-1210_GeMS.3436/NGMDB_GeMS_3436/GeMS_shapefiles/DescriptionOfMapUnits.csv")
+
+# extract point data
+sf::sf_use_s2(FALSE)
+focalsites_geology <- st_join(focalsites, geology, join = st_intersects)
+
+# join and clean
+focalsites_geology <- as_tibble(focalsites_geology) %>%
+  select(site_name, MapUnit) %>%
+  left_join(mapunits %>% select(MapUnit, FullName)) %>%
+  mutate(surface_geology = paste(MapUnit, ": ", FullName, sep = "")) %>%
+  select(site_name, surface_geology)
+
+head(focalsites_geology)
+```
+
+
+Create big tibble
+```{r}
+mybigtib <- siteinfo %>%
+  filter(site_name %in% focalsites$site_name) %>% 
+  mutate(area_sqkm = area_sqmi*2.58999,
+         elev_m = elev_ft*0.3048,
+         basin = factor(basin, levels = c("Donner Blitzen", "Snake River", "Flathead", "Shields River", 
+                                          "Paine Run", "Staunton River", "West Brook"))) %>%
+  mutate(basin = recode(basin, 
+                        "Shields River" = "Yellowstone River", 
+                        "Flathead" = "Flathead River", 
+                        "Donner Blitzen" = "Donner und Blitzen River"),
+         type = factor(recode(designation, "big" = "Reference", "little" = "Headwater", "medium" = "Headwater"), levels = c("Reference", "Headwater")),
+         station_no = ifelse(source == "NWIS", station_no, NA)) %>%
+  left_join(focalsites_eco) %>% left_join(focalsites_geology) %>%
+  mutate(across(c(NA_L1NAME, NA_L2NAME, NA_L3NAME), str_to_lower)) %>%
+  mutate(ecoregion = paste("(1) ", NA_L1NAME, ", (2) ", NA_L2NAME, ", (3) ", NA_L3NAME, sep = "")) %>%
+  select(basin, type, site_name, station_no, area_sqkm, elev_m, surface_geology, ecoregion) %>%
+  arrange(basin, type, site_name)
+
+mybigtib
+```
+
+Write table to file
+```{r}
+write_csv(mybigtib, "C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/SuppTable1.csv")
+```
 
 
 ## Headwater data
@@ -885,6 +969,68 @@ points(x = jitter(extracted_vals2$fs, factor = 20), y = rep(0, times = dim(extra
 
 dev.off()
 ```
+
+
+#### Hydroclimate basin means
+
+Calculate basin means
+```{r}
+extracted_vals3 <- extracted_vals2 %>% 
+  group_by(basin) %>%
+  summarize(Im = mean(Im), Imr = mean(Imr), fs = mean(fs), color = unique(color)) %>% ungroup()
+```
+
+Write 3-D scatterplot to file
+```{r}
+jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/Fig1_3Dscatter_NoHull_basinmean.jpg", width = 5, height = 5, units = "in", res = 1000)
+par(mar = c(2,2,2,2), mgp = c(5,1,0))
+scatter3D(x = df_legend$Im, y = df_legend$Imr, z = df_legend$fs, 
+          col = alpha("grey", 0.2), cex = 0.15, pch = 16, bty = "b2",
+          xlab = "", ylab = "", zlab = "",
+          phi = 25, theta = -50, expand = 0.75, ticktype = "detailed")
+scatter3D(x = extracted_vals3$Im, y = extracted_vals3$Imr, z = extracted_vals3$fs-0.03, 
+          col = "black", type = "h", add = TRUE, pch = NA)
+scatter3D(x = extracted_vals3$Im, y = extracted_vals3$Imr, z = extracted_vals3$fs, 
+          bg = extracted_vals3$color, col = "black", cex = 1.5, pch = 21, add = TRUE)
+dev.off()
+```
+
+Write distributions to file
+```{r eval=FALSE}
+jpeg("C:/Users/jbaldock/OneDrive - DOI/Documents/USGS/EcoDrought/EcoDrought Working/Presentation figs/Fig1_ClimateDensityDistributions2_basinmean.jpg", width = 3, height = 3, units = "in", res = 1000)
+par(mfrow = c(3,1), mar = c(2.5,0.5,0.1,0.5), mgp = c(1.5,0.5,0), xpd = TRUE)
+
+dens <- density(df_legend$Im)
+plot(dens, type = "n", xlab = "Aridity", ylab = "", main = "", bty = "n", xlim = c(-1, 1), axes = FALSE)
+polygon(dens, col = "grey70", border = NA)
+lines(dens, bty = "n")
+polygon(x = c(-10, -1, -1, -10), y = c(-10, -10, 10, 10), border = NA, col = "white")
+polygon(x = c(10, 1, 1, 10), y = c(-10, -10, 10, 10), border = NA, col = "white")
+axis(1)
+points(x = jitter(extracted_vals3$Im, factor = 5), y = rep(0, times = dim(extracted_vals3)[1]), pch = 21, bg = extracted_vals3$color, cex = 2)
+
+
+dens <- density(df_legend$Imr)
+plot(dens, type = "n", xlab = "Seasonality", ylab = "", main = "", bty = "n", xlim = c(0, 2), axes = FALSE)
+polygon(dens, col = "grey70", border = NA)
+lines(dens, bty = "n")
+polygon(x = c(-10, 0, 0, -10), y = c(-10, -10, 10, 10), border = NA, col = "white")
+polygon(x = c(10, 2, 2, 10), y = c(-10, -10, 10, 10), border = NA, col = "white")
+axis(1)
+points(x = jitter(extracted_vals3$Imr, factor = 5), y = rep(0, times = dim(extracted_vals3)[1]), pch = 21, bg = extracted_vals3$color, cex = 2)
+
+dens <- density(df_legend$fs)
+plot(dens, type = "n", xlab = "Precipitation as snow", ylab = "", main = "", bty = "n", xlim = c(0, 1), axes = FALSE)
+polygon(dens, col = "grey70", border = NA)
+lines(dens, bty = "n")
+polygon(x = c(-10, 0, 0, -10), y = c(-10, -10, 10, 10), border = NA, col = "white")
+polygon(x = c(10, 1, 1, 10), y = c(-10, -10, 10, 10), border = NA, col = "white")
+axis(1)
+points(x = jitter(extracted_vals3$fs, factor = 5), y = rep(0, times = dim(extracted_vals3)[1]), pch = 21, bg = extracted_vals3$color, cex = 2)
+
+dev.off()
+```
+
 
 
 ### Repeatability by climate
